@@ -86,8 +86,8 @@ static gboolean handle_hook_server_input(GIOChannel* t_chan, GIOCondition t_cond
             t_hookserv->hhsi.numargs = 0;
             
             // Read the command name
-            gchar *line;
-            dna::cr::read_line(t_hookserv->hhsi.line, t_chan, line);
+            gchar* line;
+            dna::cr_read_line(t_hookserv->hhsi.line, t_chan, line);
             t_hookserv->hhsi.command_name = dropbox_client_util_desanitize(line);
             g_free(line);
 
@@ -96,7 +96,7 @@ static gboolean handle_hook_server_input(GIOChannel* t_chan, GIOCondition t_cond
             // Now read each arg line (until a certain limit) until we receive "done"
             while (true)
             {
-                gchar *line;
+                gchar* line;
 
                 // If too many arguments, this connection seems malicious
                 if (t_hookserv->hhsi.numargs >= 20)
@@ -104,7 +104,7 @@ static gboolean handle_hook_server_input(GIOChannel* t_chan, GIOCondition t_cond
                     return false;
                 }
 
-                dna::cr::read_line(t_hookserv->hhsi.line, t_chan, line);
+                dna::cr_read_line(t_hookserv->hhsi.line, t_chan, line);
 
                 if (strcmp("done", line) == 0)
                 {
@@ -332,7 +332,7 @@ void nautilus_dropbox_hooks_setup(NautilusDropboxHookserv* t_hookserv)
 
 void nautilus_dropbox_hooks_add_on_disconnect_hook(NautilusDropboxHookserv* t_hookserv, DropboxHookClientConnectHook t_dhcch, gpointer t_ud)
 {
-    GHook *newhook;
+    GHook* newhook;
 
     newhook = g_hook_alloc(&(t_hookserv->ondisconnect_hooklist));
     newhook->func = t_dhcch;
@@ -343,7 +343,7 @@ void nautilus_dropbox_hooks_add_on_disconnect_hook(NautilusDropboxHookserv* t_ho
 
 void nautilus_dropbox_hooks_add_on_connect_hook(NautilusDropboxHookserv* t_hookserv, DropboxHookClientConnectHook t_dhcch, gpointer t_ud)
 {
-    GHook *newhook;
+    GHook* newhook;
 
     newhook = g_hook_alloc(&(t_hookserv->onconnect_hooklist));
     newhook->func = t_dhcch;
@@ -353,7 +353,7 @@ void nautilus_dropbox_hooks_add_on_connect_hook(NautilusDropboxHookserv* t_hooks
 }
 
 void nautilus_dropbox_hooks_add(NautilusDropboxHookserv* t_hookserv, const gchar* t_hook_name, DropboxUpdateHook t_hook, gpointer t_ud) {
-    HookData *hd;
+    HookData* hd;
     hd = g_new(HookData, 1);
     hd->hook = t_hook;
     hd->ud = t_ud;

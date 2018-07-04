@@ -52,46 +52,46 @@ G_BEGIN_DECLS
 /* command structs */
 typedef enum {GET_FILE_INFO, GENERAL_COMMAND} NautilusDropboxRequestType;
 
-typedef struct {
+struct DropboxCommand {
   NautilusDropboxRequestType request_type;
-} DropboxCommand;
+};
 
-typedef struct {
+struct DropboxFileInfoCommand {
   DropboxCommand dc;
   NautilusInfoProvider *provider;
   GClosure *update_complete;
   NautilusFileInfo *file;
   gboolean cancelled;
-} DropboxFileInfoCommand;
+};
 
-typedef struct {
+struct DropboxFileInfoCommandResponse {
   DropboxFileInfoCommand *dfic;
   GHashTable *file_status_response;
   GHashTable *folder_tag_response;
   GHashTable *emblems_response;
-} DropboxFileInfoCommandResponse;
+};
 
 typedef void (*NautilusDropboxCommandResponseHandler)(GHashTable *, gpointer);
 
-typedef struct {
+struct DropboxGeneralCommand {
   DropboxCommand dc;
   gchar *command_name;
   GHashTable *command_args;
   NautilusDropboxCommandResponseHandler handler;
   gpointer handler_ud;
-} DropboxGeneralCommand;
+};
 
 typedef void (*DropboxCommandClientConnectionAttemptHook)(guint, gpointer);
 typedef GHookFunc DropboxCommandClientConnectHook;
 
-typedef struct {
+struct DropboxCommandClient {
   GMutex *command_connected_mutex;
   gboolean command_connected;
   GAsyncQueue *command_queue; 
   GList *ca_hooklist;
   GHookList onconnect_hooklist;
   GHookList ondisconnect_hooklist;
-} DropboxCommandClient;
+};
 
 gboolean dropbox_command_client_is_connected(DropboxCommandClient *dcc);
 

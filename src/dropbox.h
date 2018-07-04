@@ -40,7 +40,6 @@
  * along with nautilus-dropbox.  If not, see <http://www.gnu.org/licenses/>.
  *
  */
- */
 
 #ifndef DROPBOX_H
 #define DROPBOX_H

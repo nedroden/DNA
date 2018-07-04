@@ -48,147 +48,138 @@
 #include "nautilus-dropbox-hooks.h"
 #include "dropbox-client.h"
 
-static void
-hook_on_connect(DropboxClient *dc) {
-  dc->hook_connect_called = TRUE;
-  
-  if (dc->command_connect_called) {
-    debug("client connection");
-    g_hook_list_invoke(&(dc->onconnect_hooklist), FALSE);
-    /* reset flags */
-    dc->hook_connect_called = dc->command_connect_called = FALSE;
-  }
+static void hook_on_connect(DropboxClient* t_dc)
+{
+    t_dc->hook_connect_called = true;
+
+    if (t_dc->command_connect_called)
+    {
+        debug("client connection");
+        g_hook_list_invoke(&(t_dc->onconnect_hooklist), false);
+        
+        // Reset flags
+        t_dc->hook_connect_called = t_dc->command_connect_called = false;
+    }
 }
 
-static void
-command_on_connect(DropboxClient *dc) {
-  dc->command_connect_called = TRUE;
-  
-  if (dc->hook_connect_called) {
-    debug("client connection");
-    g_hook_list_invoke(&(dc->onconnect_hooklist), FALSE);
-    /* reset flags */
-    dc->hook_connect_called = dc->command_connect_called = FALSE;
-  }
+static void command_on_connect(DropboxClient* t_dc)
+{
+    t_dc->command_connect_called = true;
+
+    if (t_dc->hook_connect_called)
+    {
+        debug("client connection");
+        g_hook_list_invoke(&(t_dc->onconnect_hooklist), false);
+        
+        // Reset flags
+        t_dc->hook_connect_called = t_dc->command_connect_called = false;
+    }
 }
 
-static void
-command_on_disconnect(DropboxClient *dc) {
-  dc->command_disconnect_called = TRUE;
-  
-  if (dc->hook_disconnect_called) {
-    debug("client disconnect");
-    g_hook_list_invoke(&(dc->ondisconnect_hooklist), FALSE);
-    /* reset flags */
-    dc->hook_disconnect_called = dc->command_disconnect_called = FALSE;
-  }
-  else {
-    nautilus_dropbox_hooks_force_reconnect(&(dc->hookserv));
-  }
+static void command_on_disconnect(DropboxClient* t_dc)
+{
+    t_dc->command_disconnect_called = true;
+
+    if (t_dc->hook_disconnect_called)
+    {
+        debug("client disconnect");
+        g_hook_list_invoke(&(t_dc->ondisconnect_hooklist), false);
+        
+        // Reset flags
+        t_dc->hook_disconnect_called = t_dc->command_disconnect_called = false;
+    }
+    else
+    {
+        nautilus_dropbox_hooks_force_reconnect(&(t_dc->hookserv));
+    }
 }
 
-static void
-hook_on_disconnect(DropboxClient *dc) {
-  dc->hook_disconnect_called = TRUE;
-  
-  if (dc->command_disconnect_called) {
-    debug("client disconnect");
-    g_hook_list_invoke(&(dc->ondisconnect_hooklist), FALSE);
-    /* reset flags */
-    dc->hook_disconnect_called = dc->command_disconnect_called = FALSE;
-  }
-  else {
-    dropbox_command_client_force_reconnect(&(dc->dcc));
-  }
+static void hook_on_disconnect(DropboxClient* t_dc)
+{
+    t_dc->hook_disconnect_called = true;
+
+    if (t_dc->command_disconnect_called)
+    {
+        debug("client disconnect");
+        g_hook_list_invoke(&(t_dc->ondisconnect_hooklist), false);
+        
+        // Reset flags
+        t_dc->hook_disconnect_called = t_dc->command_disconnect_called = false;
+    }
+    else
+    {
+        dropbox_command_client_force_reconnect(&(t_dc->dcc));
+    }
 }
 
-gboolean
-dropbox_client_is_connected(DropboxClient *dc) {
-  return (dropbox_command_client_is_connected(&(dc->dcc)) &&
-	  nautilus_dropbox_hooks_is_connected(&(dc->hookserv)));
+gboolean dropbox_client_is_connected(DropboxClient* t_dc)
+{
+    return (dropbox_command_client_is_connected(&(t_dc->dcc)) && nautilus_dropbox_hooks_is_connected(&(t_dc->hookserv)));
 }
 
-void
-dropbox_client_force_reconnect(DropboxClient *dc) {
-  if (dropbox_client_is_connected(dc) == TRUE) {
-    debug("forcing client to reconnect");
-    dropbox_command_client_force_reconnect(&(dc->dcc));
-    nautilus_dropbox_hooks_force_reconnect(&(dc->hookserv));
-  }
-}
-
-/* should only be called once on initialization */
-void
-dropbox_client_setup(DropboxClient *dc) {
-  nautilus_dropbox_hooks_setup(&(dc->hookserv));
-  dropbox_command_client_setup(&(dc->dcc));
-
-  g_hook_list_init(&(dc->ondisconnect_hooklist), sizeof(GHook));
-  g_hook_list_init(&(dc->onconnect_hooklist), sizeof(GHook));
-
-  dc->hook_disconnect_called = dc->command_disconnect_called = FALSE;
-  dc->hook_connect_called = dc->command_connect_called = FALSE;
-
-  nautilus_dropbox_hooks_add_on_connect_hook(&(dc->hookserv), 
-					     (DropboxHookClientConnectHook)
-					     hook_on_connect, dc);
-  
-  dropbox_command_client_add_on_connect_hook(&(dc->dcc),
-					     (DropboxCommandClientConnectHook)
-					     command_on_connect, dc);
-  
-  nautilus_dropbox_hooks_add_on_disconnect_hook(&(dc->hookserv), 
-						(DropboxHookClientConnectHook)
-						hook_on_disconnect, dc);
-  
-  dropbox_command_client_add_on_disconnect_hook(&(dc->dcc),
-						(DropboxCommandClientConnectHook)
-						command_on_disconnect, dc);
-}
-
-/* not thread safe */
-void
-dropbox_client_add_on_disconnect_hook(DropboxClient *dc,
-				      DropboxClientConnectHook dhcch,
-				      gpointer ud) {
-  GHook *newhook;
-  
-  newhook = g_hook_alloc(&(dc->ondisconnect_hooklist));
-  newhook->func = dhcch;
-  newhook->data = ud;
-  
-  g_hook_append(&(dc->ondisconnect_hooklist), newhook);
-}
-
-/* not thread safe */
-void
-dropbox_client_add_on_connect_hook(DropboxClient *dc,
-				   DropboxClientConnectHook dhcch,
-				   gpointer ud) {
-  GHook *newhook;
-  
-  newhook = g_hook_alloc(&(dc->onconnect_hooklist));
-  newhook->func = dhcch;
-  newhook->data = ud;
-  
-  g_hook_append(&(dc->onconnect_hooklist), newhook);
-}
-
-/* not thread safe */
-void
-dropbox_client_add_connection_attempt_hook(DropboxClient *dc,
-					   DropboxClientConnectionAttemptHook dhcch,
-					   gpointer ud) {
-  debug("shouldn't be here...");
-
-  dropbox_command_client_add_connection_attempt_hook(&(dc->dcc),
-						     dhcch, ud);
+void dropbox_client_force_reconnect(DropboxClient* t_dc)
+{
+    if (dropbox_client_is_connected(t_dc))
+    {
+        debug("forcing client to reconnect");
+        dropbox_command_client_force_reconnect(&(t_dc->dcc));
+        nautilus_dropbox_hooks_force_reconnect(&(t_dc->hookserv));
+    }
 }
 
 /* should only be called once on initialization */
-void
-dropbox_client_start(DropboxClient *dc) {
-  debug("starting connections");
-  nautilus_dropbox_hooks_start(&(dc->hookserv));
-  dropbox_command_client_start(&(dc->dcc));
+void dropbox_client_setup(DropboxClient* t_dc)
+{
+    nautilus_dropbox_hooks_setup(&(t_dc->hookserv));
+    dropbox_command_client_setup(&(t_dc->dcc));
+
+    g_hook_list_init(&(t_dc->ondisconnect_hooklist), sizeof(GHook));
+    g_hook_list_init(&(t_dc->onconnect_hooklist), sizeof(GHook));
+
+    t_dc->hook_disconnect_called = t_dc->command_disconnect_called = false;
+    t_dc->hook_connect_called = t_dc->command_connect_called = false;
+
+    nautilus_dropbox_hooks_add_on_connect_hook(&(t_dc->hookserv), (DropboxHookClientConnectHook) hook_on_connect, t_dc);
+    dropbox_command_client_add_on_connect_hook(&(t_dc->dcc), (DropboxCommandClientConnectHook) command_on_connect, t_dc);
+    nautilus_dropbox_hooks_add_on_disconnect_hook(&(t_dc->hookserv), (DropboxHookClientConnectHook) hook_on_disconnect, t_dc);
+    dropbox_command_client_add_on_disconnect_hook(&(t_dc->dcc), (DropboxCommandClientConnectHook) command_on_disconnect, t_dc);
+}
+
+/* not thread safe */
+void dropbox_client_add_on_disconnect_hook(DropboxClient* t_dc, DropboxClientConnectHook t_dhcch, gpointer t_ud)
+{
+    GHook* newhook;
+
+    newhook = g_hook_alloc(&(t_dc->ondisconnect_hooklist));
+    newhook->func = dhcch;
+    newhook->data = ud;
+
+    g_hook_append(&(t_dc->ondisconnect_hooklist), newhook);
+}
+
+/* not thread safe */
+void dropbox_client_add_on_connect_hook(DropboxClient *t_dc, DropboxClientConnectHook t_dhcch, gpointer t_ud) {
+    GHook* newhook;
+
+    newhook = g_hook_alloc(&(t_dc->onconnect_hooklist));
+    newhook->func = t_dhcch;
+    newhook->data = t_ud;
+
+    g_hook_append(&(t_dc->onconnect_hooklist), newhook);
+}
+
+/* not thread safe */
+void dropbox_client_add_connection_attempt_hook(DropboxClient *t_dc, DropboxClientConnectionAttemptHook t_dhcch, gpointer t_ud)
+{
+    debug("shouldn't be here...");
+
+    dropbox_command_client_add_connection_attempt_hook(&(t_dc->dcc), t_dhcch, t_ud);
+}
+
+/* should only be called once on initialization */
+void dropbox_client_start(DropboxClient *t_dc)
+{
+    debug("starting connections");
+    nautilus_dropbox_hooks_start(&(t_dc->hookserv));
+    dropbox_command_client_start(&(t_dc->dcc));
 }

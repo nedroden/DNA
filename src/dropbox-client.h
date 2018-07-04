@@ -50,46 +50,29 @@
 
 G_BEGIN_DECLS
 
-typedef struct {
-  DropboxCommandClient dcc;
-  NautilusDropboxHookserv hookserv;
-  GHookList onconnect_hooklist;
-  GHookList ondisconnect_hooklist;
-  gboolean hook_connect_called;
-  gboolean command_connect_called;
-  gboolean hook_disconnect_called;
-  gboolean command_disconnect_called;
-} DropboxClient;
+struct DropboxClient {
+    DropboxCommandClient dcc;
+    NautilusDropboxHookserv hookserv;
+    GHookList onconnect_hooklist;
+    GHookList ondisconnect_hooklist;
+    gboolean hook_connect_called;
+    gboolean command_connect_called;
+    gboolean hook_disconnect_called;
+    gboolean command_disconnect_called;
+};
 
 typedef void (*DropboxClientConnectionAttemptHook)(guint, gpointer);
 typedef GHookFunc DropboxClientConnectHook;
 
-void
-dropbox_client_setup(DropboxClient *dc);
+void dropbox_client_setup(DropboxClient* t_dc);
+void dropbox_client_start(DropboxClient* t_dc);
 
-void
-dropbox_client_start(DropboxClient *dc);
+gboolean dropbox_client_is_connected(DropboxClient* t_dc);
+void dropbox_client_force_reconnect(DropboxClient* t_dc);
 
-gboolean
-dropbox_client_is_connected(DropboxClient *dc);
-
-void
-dropbox_client_force_reconnect(DropboxClient *dc);
-
-void
-dropbox_client_add_on_connect_hook(DropboxClient *dc,
-				   DropboxClientConnectHook dhcch,
-				   gpointer ud);
-
-void
-dropbox_client_add_on_disconnect_hook(DropboxClient *dc,
-				      DropboxClientConnectHook dhcch,
-				      gpointer ud);
-
-void
-dropbox_client_add_connection_attempt_hook(DropboxClient *dc,
-					   DropboxClientConnectionAttemptHook dhcch,
-					   gpointer ud);
+void dropbox_client_add_on_connect_hook(DropboxClient* t_dc, DropboxClientConnectHook t_dhcch, gpointer t_ud);
+void dropbox_client_add_on_disconnect_hook(DropboxClient* t_dc, DropboxClientConnectHook t_dhcch, gpointer t_ud);
+void dropbox_client_add_connection_attempt_hook(DropboxClient* t_dc, DropboxClientConnectionAttemptHook t_dhcch, gpointer t_ud);
 
 G_END_DECLS
 

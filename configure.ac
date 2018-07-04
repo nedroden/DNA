@@ -1,15 +1,16 @@
 # Initialization
 
-AC_INIT([nautilus-dropbox],2015.10.28)
+AC_INIT([dna], [1.0.0])
 
-AM_INIT_AUTOMAKE(AC_PACKAGE_NAME, AC_PACKAGE_VERSION)
+AM_INIT_AUTOMAKE([-Wall -Werror foreign])
 
 AC_PREFIX_DEFAULT(/usr)
 
-AM_CONFIG_HEADER(config.h)
-
 # not ready for i18n yet
 #AC_PROG_INTLTOOL([0.29])
+
+# Fix error related to ltlibrary
+m4_ifdef([AM_PROG_AR], [AM_PROG_AR])
 
 # Dependency checks
 NAUTILUS_REQUIRED=2.16.0
@@ -55,8 +56,8 @@ else
 fi
 ])
 
-PYTHON_CHECK_MODULE(pygtk, gtk)
-PYTHON_CHECK_MODULE(gobject, gobject)
+PYTHON_VERSION(3.6)
+PYTHON_CHECK_MODULE(pygobject, pygobject)
 PYTHON_CHECK_MODULE(docutils, docutils)
 
 # Make dependency CFLAGS and LIBS available

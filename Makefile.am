@@ -1,4 +1,4 @@
-AUTOMAKE_OPTIONS = dist-bzip2 no-dist-gzip
+AUTOMAKE_OPTIONS = dist-bzip2 no-dist-gzip foreign
 
 bin_SCRIPTS = dropbox
 CLEANFILES = $(bin_SCRIPTS) dropbox.1 dropbox.txt
