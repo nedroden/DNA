@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 #
 # Copyright (c) Dropbox, Inc.
 #
@@ -19,7 +19,6 @@
 # You should have received a copy of the GNU General Public License
 # along with nautilus-dropbox.  If not, see <http://www.gnu.org/licenses/>.
 #
-from __future__ import with_statement
 
 import errno
 import locale
@@ -321,7 +320,8 @@ if GUI_AVAILABLE:
                         if self._stopped:
                             thread.exit()
                 except Exception, ex:
-                    print ex
+                    print(ex)
+
                     if self.on_exception is not None:
                         gobject.idle_add(self.on_exception, ex)
                 else:
@@ -698,12 +698,16 @@ aliases = {}
 def command(meth):
     global commands, aliases
     assert meth.__doc__, "All commands need properly formatted docstrings (even %r!!)" % meth
+
     if hasattr(meth, 'im_func'): # bound method, if we ever have one
         meth = meth.im_func
+
     commands[meth.func_name] = meth
     meth_aliases = [unicode(alias) for alias in aliases.iterkeys() if aliases[alias].func_name == meth.func_name]
+
     if meth_aliases:
         meth.__doc__ += u"\nAliases: %s" % ",".join(meth_aliases)
+
     return meth
 
 def alias(name):
@@ -711,7 +715,9 @@ def alias(name):
         global commands, aliases
         assert name not in commands, "This alias is the name of a command."
         aliases[name] = meth
+
         return meth
+
     return decorator
 
 def requires_dropbox_running(meth):
@@ -741,9 +747,7 @@ def start_dropbox():
             # back off from connect for a while
             time.sleep(interval)
 
-        return False
-    else:
-        return False
+    return False
 
 # Extracted and modified from os.cmd.Cmd
 def columnize(list, display_list=None, display_width=None):

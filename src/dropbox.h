@@ -47,13 +47,8 @@
 
 extern gboolean dropbox_use_nautilus_submenu_workaround;
 
-void
-nautilus_module_initialized(GTypeModule *module);
-
-void
-nautilus_module_shutdown();
-
-void
-nautilus_module_list_types();
+void nautilus_module_initialized(GTypeModule* t_module);
+void nautilus_module_shutdown();
+void nautilus_module_list_types(const GType** t_types, int* t_num_types);
 
 #endif

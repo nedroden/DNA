@@ -1,4 +1,5 @@
 /*
+ *
  * DNA - Dropbox for Nautilus on Arch
  * Copyright (C) 2018 Robert Monden
  * 
@@ -20,7 +21,7 @@
  * ------------------------------------------------------------------------
  * Copyright 2008 Evenflow, Inc.
  *
- * dropbox-client.c
+ * dropbox-client.cpp
  * Implements connection handling and C interface for interfacing with the Dropbox daemon.
  *
  * This file is part of nautilus-dropbox.

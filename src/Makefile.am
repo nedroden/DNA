@@ -22,18 +22,20 @@ libnautilus_dropbox_la_CFLAGS += -DG_DISABLE_ASSERT -DG_DISABLE_CHECKS
 endif
 
 libnautilus_dropbox_la_SOURCES = \
-	nautilus-dropbox.c       \
+	nautilus-dropbox.cpp       \
 	nautilus-dropbox.h       \
 	nautilus-dropbox-hooks.h \
-	nautilus-dropbox-hooks.c \
+	nautilus-dropbox-hooks.cpp \
 	dropbox-command-client.h \
-	dropbox-command-client.c \
+	dropbox-command-client.cpp \
 	dropbox-client.c dropbox-client.h \
 	g-util.h \
 	async-io-coroutine.h \
-	dropbox-client-util.c \
+	dropbox-client-util.cpp \
 	dropbox-client-util.h \
-	dropbox.c
+	dropbox.cpp \
+	dna-util.cpp \
+	dna-util.h
 
 libnautilus_dropbox_la_LDFLAGS = -module -avoid-version
 libnautilus_dropbox_la_LIBADD  = $(NAUTILUS_LIBS) $(GLIB_LIBS)

@@ -21,7 +21,7 @@
  * ------------------------------------------------------------------------
  * Copyright 2008 Evenflow, Inc.
  *
- * dropbox.c
+ * dropbox.cpp
  * Nautilus module registering functions for the Dropbox extension.
  *
  * This file is part of nautilus-dropbox.
@@ -54,27 +54,28 @@
 
 static GType type_list[1];
 
-void
-nautilus_module_initialize (GTypeModule *module) {
-  g_print ("Initializing %s\n", PACKAGE_STRING);
+void nautilus_module_initialize(GTypeModule* t_module)
+{
+    g_print("Initializing %s\n", PACKAGE_STRING);
 
-  nautilus_dropbox_register_type (module);
-  type_list[0] = NAUTILUS_TYPE_DROPBOX;
+    nautilus_dropbox_register_type(t_module);
+    type_list[0] = NAUTILUS_TYPE_DROPBOX;
 
-  dropbox_use_nautilus_submenu_workaround
-    = (NAUTILUS_VERSION_MAJOR < 2 ||
-       (NAUTILUS_VERSION_MAJOR == 2 && NAUTILUS_VERSION_MINOR <= 22));
-  dropbox_use_operation_in_progress_workaround = TRUE;
+    dropbox_use_nautilus_submenu_workaround = (
+        NAUTILUS_VERSION_MAJOR < 2 ||
+        (NAUTILUS_VERSION_MAJOR == 2 && NAUTILUS_VERSION_MINOR <= 22)
+    );
+
+    dropbox_use_operation_in_progress_workaround = true;
 }
 
-void
-nautilus_module_shutdown (void) {
-  g_print ("Shutting down dropbox extension\n");
+void nautilus_module_shutdown()
+{
+    g_print("Shutting down dropbox extension\n");
 }
 
-void
-nautilus_module_list_types (const GType **types,
-                            int *num_types) {
-  *types = type_list;
-  *num_types = G_N_ELEMENTS (type_list);
+void nautilus_module_list_types(const GType** t_types, int* t_num_types)
+{
+    *t_types = type_list;
+    *t_num_types = G_N_ELEMENTS(type_list);
 }

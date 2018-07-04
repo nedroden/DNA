@@ -21,7 +21,7 @@
  * ------------------------------------------------------------------------
  * Copyright 2008 Evenflow, Inc.
  *
- * dropbox-command-client.c
+ * dropbox-command-client.cpp
  * Implements connection handling and C interface for the Dropbox command socket.
  *
  * This file is part of nautilus-dropbox.

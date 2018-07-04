@@ -1,4 +1,5 @@
 /*
+ *
  * DNA - Dropbox for Nautilus on Arch
  * Copyright (C) 2018 Robert Monden
  * 
@@ -20,7 +21,7 @@
  * ------------------------------------------------------------------------
  * Copyright 2008 Evenflow, Inc.
  *
- * nautilus-dropbox-hooks.c
+ * nautilus-dropbox-hooks.cpp
  * Implements connection handling and C interface for the Dropbox hook socket.
  *
  * This file is part of nautilus-dropbox.
@@ -47,7 +48,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#include <string.h>
+#include <string>
 
 #include <glib.h>
 
@@ -56,98 +57,105 @@
 #include "dropbox-client-util.h"
 #include "nautilus-dropbox-hooks.h"
 
-typedef struct {
-  DropboxUpdateHook hook;
-  gpointer ud;
-} HookData;
+struct HookData {
+    DropboxUpdateHook hook;
+    gpointer ud;
+};
 
 static gboolean
 try_to_connect(NautilusDropboxHookserv *hookserv);
 
 static gboolean
-handle_hook_server_input(GIOChannel *chan,
-			 GIOCondition cond,
-			 NautilusDropboxHookserv *hookserv) {
-  /*debug_enter(); */
+handle_hook_server_input(GIOChannel* t_chan, GIOCondition t_cond, NautilusDropboxHookserv* t_hookserv) {
+    // debug_enter();
 
-  /* we have some sweet macros defined that allow us to write this
+    /* we have some sweet macros defined that allow us to write this
      async event handler like a microthread yeahh, watch out for context */
-  CRBEGIN(hookserv->hhsi.line);
-  while (1) {
-    hookserv->hhsi.command_args =
-      g_hash_table_new_full((GHashFunc) g_str_hash,
-			    (GEqualFunc) g_str_equal,
-			    (GDestroyNotify) g_free,
-			    (GDestroyNotify) g_strfreev);
-    hookserv->hhsi.numargs = 0;
-    
-    /* read the command name */
+    CRBEGIN(t_hookserv->hhsi.line);
+
+    while (true)
     {
-      gchar *line;
-      CRREADLINE(hookserv->hhsi.line, chan, line);
-      hookserv->hhsi.command_name = dropbox_client_util_desanitize(line);
-      g_free(line);
+        t_hookserv->hhsi.command_args = g_hash_table_new_full(
+            (GHashFunc) g_str_hash,
+		    (GEqualFunc) g_str_equal,
+		    (GDestroyNotify) g_free,
+		    (GDestroyNotify) g_strfreev
+        );
+
+        t_hookserv->hhsi.numargs = 0;
+        
+        /* read the command name */
+        {
+            gchar *line;
+            CRREADLINE(t_hookserv->hhsi.line, t_chan, line);
+            t_hookserv->hhsi.command_name = dropbox_client_util_desanitize(line);
+            g_free(line);
+        }
+
+        /*debug("got a hook name: %s", hookserv->hhsi.command_name); */
+
+        /* now read each arg line (until a certain limit) until we receive "done" */
+        while (1) {
+            gchar *line;
+
+            /* if too many arguments, this connection seems malicious */
+            if (t_hookserv->hhsi.numargs >= 20)
+            {
+                CRHALT;
+            }
+
+            CRREADLINE(t_hookserv->hhsi.line, t_chan, line);
+
+            if (strcmp("done", line) == 0)
+            {
+                g_free(line);
+                break;
+            }
+            else
+            {
+                gboolean parse_result;
+
+                parse_result =
+                dropbox_client_util_command_parse_arg(line, t_hookserv->hhsi.command_args);
+                g_free(line);
+
+                if (!parse_result)
+                {
+                    debug("bad parse");
+                    CRHALT;
+                }
+            }
+
+            t_hookserv->hhsi.numargs += 1;
+        }
+
+        {
+            HookData* hd;
+            hd = (HookData *)
+            g_hash_table_lookup(t_hookserv->dispatch_table, t_hookserv->hhsi.command_name);
+
+            if (hd != nullptr)
+            {
+                (hd->hook)(t_hookserv->hhsi.command_args, hd->ud);
+            }
+        }
+        
+        g_free(t_hookserv->hhsi.command_name);
+        g_hash_table_unref(t_hookserv->hhsi.command_args);
+        t_hookserv->hhsi.command_name = nullptr;
+        t_hookserv->hhsi.command_args = nullptr;
     }
 
-    /*debug("got a hook name: %s", hookserv->hhsi.command_name); */
-
-    /* now read each arg line (until a certain limit) until we receive "done" */
-    while (1) {
-      gchar *line;
-
-      /* if too many arguments, this connection seems malicious */
-      if (hookserv->hhsi.numargs >= 20) {
-	CRHALT;
-      }
-
-      CRREADLINE(hookserv->hhsi.line, chan, line);
-
-      if (strcmp("done", line) == 0) {
-	g_free(line);
-	break;
-      }
-      else {
-	gboolean parse_result;
-	
-	parse_result =
-	  dropbox_client_util_command_parse_arg(line,
-						hookserv->hhsi.command_args);
-	g_free(line);
-
-	if (FALSE == parse_result) {
-	  debug("bad parse");
-	  CRHALT;
-	}
-      }
-
-      hookserv->hhsi.numargs += 1;
-    }
-
-    {
-      HookData *hd;
-      hd = (HookData *)
-	g_hash_table_lookup(hookserv->dispatch_table,
-			    hookserv->hhsi.command_name);
-      if (hd != NULL) {
-	(hd->hook)(hookserv->hhsi.command_args, hd->ud);
-      }
-    }
-    
-    g_free(hookserv->hhsi.command_name);
-    g_hash_table_unref(hookserv->hhsi.command_args);
-    hookserv->hhsi.command_name = NULL;
-    hookserv->hhsi.command_args = NULL;
-  }
-  CREND;
+    CREND;
 }
 
 static void
 watch_killer(NautilusDropboxHookserv *hookserv) {
   debug("hook client disconnected");
 
-  hookserv->connected = FALSE;
+  hookserv->connected = false;
 
-  g_hook_list_invoke(&(hookserv->ondisconnect_hooklist), FALSE);
+  g_hook_list_invoke(&(hookserv->ondisconnect_hooklist), false);
   
   /* we basically just have to free the memory allocated in the
      handle_hook_server_init ctx */
@@ -226,17 +234,17 @@ try_to_connect(NautilusDropboxHookserv *hookserv) {
   }
 
   /* lol sometimes i write funny codez */
-  if (FALSE) {
+  if (false) {
   FAIL_CLEANUP:
     close(hookserv->socket);
     g_timeout_add_seconds(1, (GSourceFunc) try_to_connect, hookserv);
-    return FALSE;
+    return false;
   }
 
   /* great we connected!, let's create the channel and wait on it */
   hookserv->chan = g_io_channel_unix_new(hookserv->socket);
   g_io_channel_set_line_term(hookserv->chan, "\n", -1);
-  g_io_channel_set_close_on_unref(hookserv->chan, TRUE);
+  g_io_channel_set_close_on_unref(hookserv->chan, true);
 
   /*debug("create channel"); */
 

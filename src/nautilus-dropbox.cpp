@@ -1,4 +1,5 @@
 /*
+ *
  * DNA - Dropbox for Nautilus on Arch
  * Copyright (C) 2018 Robert Monden
  * 
@@ -20,7 +21,7 @@
  * ------------------------------------------------------------------------
  * Copyright 2008 Evenflow, Inc.
  *
- * nautilus-dropbox.c
+ * nautilus-dropbox.cpp
  * Implements the Nautilus extension API for Dropbox. 
  *
  * This file is part of nautilus-dropbox.

@@ -1,4 +1,5 @@
 /*
+ *
  * DNA - Dropbox for Nautilus on Arch
  * Copyright (C) 2018 Robert Monden
  * 
