@@ -1,7 +1,5 @@
 ~
 *.orig
-Makefile.in
-Makefile
 src/.deps
 src/.libs
 configure
