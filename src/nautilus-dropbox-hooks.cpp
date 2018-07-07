@@ -263,9 +263,6 @@ static gboolean try_to_connect(NautilusDropboxHookserv* t_hookserv)
         return false;
     }
 
-    // debug("set non blocking");
-
-    // This is fun, async io watcher
     t_hookserv->hhsi.line = 0;
     t_hookserv->hhsi.command_args = nullptr;
     t_hookserv->hhsi.command_name = nullptr;
@@ -282,7 +279,6 @@ static gboolean try_to_connect(NautilusDropboxHookserv* t_hookserv)
     t_hookserv->connected = true;
     g_hook_list_invoke(&(t_hookserv->onconnect_hooklist), false);
 
-    // debug("added watch");
     return false;
 }
 

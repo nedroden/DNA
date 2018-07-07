@@ -109,6 +109,8 @@ void dropbox_command_client_add_on_connect_hook(DropboxCommandClient* t_dcc, Dro
 void dropbox_command_client_add_on_disconnect_hook(DropboxCommandClient* t_dcc, DropboxCommandClientConnectHook t_dhcch, gpointer t_ud);
 void dropbox_command_client_add_connection_attempt_hook(DropboxCommandClient* t_dcc, DropboxCommandClientConnectionAttemptHook t_dhcch, gpointer t_ud);
 
+static gpointer dropbox_command_client_thread(DropboxCommandClient* t_data);
+
 /**
  * Todo: clean up this mess
  */
@@ -138,6 +140,12 @@ void dropbox_command_client_add_connection_attempt_hook(DropboxCommandClient* t_
       return NULL;                          \
     }                                   \
   }
+
+#define SET_CONNECTED_STATE(s)     {      \
+      g_mutex_lock(dcc->command_connected_mutex); \
+      dcc->command_connected = s;     \
+      g_mutex_unlock(dcc->command_connected_mutex); \
+    }
 
 G_END_DECLS
 

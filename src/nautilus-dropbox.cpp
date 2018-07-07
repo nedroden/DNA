@@ -66,174 +66,166 @@
 #include "nautilus-dropbox.h"
 #include "nautilus-dropbox-hooks.h"
 
-static char *emblems[] = {"dropbox-uptodate", "dropbox-syncing", "dropbox-unsyncable"};
-gchar *DEFAULT_EMBLEM_PATHS[2] = { EMBLEMDIR , NULL };
+static char* emblems[] = {"dropbox-uptodate", "dropbox-syncing", "dropbox-unsyncable"};
+gchar* DEFAULT_EMBLEM_PATHS[2] = { EMBLEMDIR , nullptr };
 
 gboolean dropbox_use_nautilus_submenu_workaround;
 gboolean dropbox_use_operation_in_progress_workaround;
 
 static GType dropbox_type = 0;
 
-/* for old versions of glib */
-#if 0  // Silence Warnings.
-static void my_g_hash_table_get_keys_helper(gpointer key,
-					    gpointer value,
-					    GList **ud) {
-  *ud = g_list_append(*ud, key);
-}
-
-static GList *my_g_hash_table_get_keys(GHashTable *ght) {
-  GList *list = NULL;
-  g_hash_table_foreach(ght, (GHFunc) my_g_hash_table_get_keys_helper, &list);
-  return list;
-}
-#endif
-
 /*
-  Simplifies a path by removing navigation elements such as '.' and '..'
+ * Simplifies a path by removing navigation elements such as '.' and '..'
+ *
+ * Arguments:
+ * - path: input path to be canonicalized
+ *
+ * Returns:
+ * Canonicalized path if input path is valid.
+ * NULL otherwise.
+ */
+static gchar* canonicalize_path(gchar* t_path)
+{
+    int i, j = 0;
+    gchar* toret = nullptr;
+    gchar** cpy, elts;
 
-  Arguments:
-    - path: input path to be canonicalized
+    g_assert(t_path != nullptr);
+    g_assert(t_path[0] == '/');
 
-  Returns:
-    Canonicalized path if input path is valid.
-    NULL otherwise.
-*/
-static gchar *
-canonicalize_path(gchar *path) {
-  int i, j = 0;
-  gchar *toret = NULL;
-  gchar **cpy, **elts;
-  
-  g_assert(path != NULL);
-  g_assert(path[0] == '/');
+    elts = g_strsplit(t_path, "/", 0);
+    cpy = g_new(gchar *, g_strv_length(elts) + 1);
+    cpy[j++] = "/";
 
-  elts = g_strsplit(path, "/", 0);
-  cpy = g_new(gchar *, g_strv_length(elts)+1);
-  cpy[j++] = "/";
-  for (i = 0; elts[i] != NULL; i++) {
-    if (strcmp(elts[i], "..") == 0) {
-      if (j > 0) {
-        j--;
-      }
-      else {
-        // Input path has too many parent directory references and is invalid
-        toret = NULL;
-        goto exit;
-      }
-    }
-    else if (strcmp(elts[i], ".") != 0 && elts[i][0] != '\0') {
-      cpy[j++] = elts[i];
-    }
-  }
-  
-  cpy[j] = NULL;
-  toret = g_build_filenamev(cpy);
-
-exit:
-  g_free(cpy);
-  g_strfreev(elts);
-  
-  return toret;
-}
-
-static void
-reset_file(NautilusFileInfo *file) {
-  debug("resetting file %p", (void *) file);
-  nautilus_file_info_invalidate_extension_info(file);
-}
-
-gboolean
-reset_all_files(NautilusDropbox *cvs) {
-  /* Only run this on the main loop or you'll cause problems. */
-
-  /* this works because you can call a function pointer with
-     more arguments than it takes */
-  g_hash_table_foreach(cvs->obj2filename, (GHFunc) reset_file, NULL);
-  return FALSE;
-}
-
-
-static void
-when_file_dies(NautilusDropbox *cvs, NautilusFileInfo *address) {
-  gchar *filename;
-
-  filename = g_hash_table_lookup(cvs->obj2filename, address);
-  
-  /* we never got a change to view this file */
-  if (filename == NULL) {
-    return;
-  }
-
-  /* too chatty */
-  /*  debug("removing %s <-> 0x%p", filename, address); */
-
-  g_hash_table_remove(cvs->filename2obj, filename);
-  g_hash_table_remove(cvs->obj2filename, address);
-}
-
-static void
-changed_cb(NautilusFileInfo *file, NautilusDropbox *cvs) {
-  /* check if this file's path has changed, if so update the hash and invalidate
-     the file */
-  gchar *filename, *pfilename;
-  gchar *filename2;
-  gchar *uri;
-
-  uri = nautilus_file_info_get_uri(file);
-  pfilename = g_filename_from_uri(uri, NULL, NULL);
-  filename = pfilename ? canonicalize_path(pfilename) : NULL;
-
-  /* Canonicalization will only null-out a non-null filename if it is invalid */
-  g_assert((pfilename == NULL && filename == NULL) || (pfilename != NULL && filename != NULL));
-
-  filename2 =  g_hash_table_lookup(cvs->obj2filename, file);
-
-  g_free(pfilename);
-  g_free(uri);
-
-  /* if filename2 is NULL we've never seen this file in update_file_info */
-  if (filename2 == NULL) {
-    g_free(filename);
-    return;
-  }
-
-  if (filename == NULL) {
-      /* A file has moved to offline storage. Lets remove it from our tables. */
-      g_object_weak_unref(G_OBJECT(file), (GWeakNotify) when_file_dies, cvs);
-      g_hash_table_remove(cvs->filename2obj, filename2);
-      g_hash_table_remove(cvs->obj2filename, file);
-      g_signal_handlers_disconnect_by_func(file, G_CALLBACK(changed_cb), cvs);
-      reset_file(file);
-      return;
-  }
-
-  /* this is a hack, because nautilus doesn't do this for us, for some reason
-     the file's path has changed */
-  if (strcmp(filename, filename2) != 0) {
-    debug("shifty old: %s, new %s", filename2, filename);
-
-    /* gotta do this first, the call after this frees filename2 */
-    g_hash_table_remove(cvs->filename2obj, filename2);
-
-    g_hash_table_replace(cvs->obj2filename, file, g_strdup(filename));
-
+    for (i = 0; elts[i] != nullptr; i++)
     {
-      NautilusFileInfo *f2;
-      /* we shouldn't have another mapping from filename to an object */
-      f2 = g_hash_table_lookup(cvs->filename2obj, filename);
-      if (f2 != NULL) {
-	/* lets fix it if it's true, just remove the mapping */
-	g_hash_table_remove(cvs->filename2obj, filename);
-	g_hash_table_remove(cvs->obj2filename, f2);
-      }
+        if (strcmp(elts[i], "..") == 0)
+        {
+            if (j > 0)
+            {
+                j--;
+            }
+            else
+            {
+                // Input path has too many parent directory references and is invalid
+                toret = nullptr;
+                goto exit;
+            }
+        }
+        else if (strcmp(elts[i], ".") != 0 && elts[i][0] != '\0')
+        {
+            cpy[j++] = elts[i];
+        }
     }
 
-    g_hash_table_insert(cvs->filename2obj, g_strdup(filename), file);
-    reset_file(file);
-  }
-  
-  g_free(filename);
+    cpy[j] = nullptr;
+    toret = g_build_filenamev(cpy);
+
+    exit:
+        g_free(cpy);
+        g_strfreev(elts);
+
+        return toret;
+}
+
+static void reset_file(NautilusFileInfo* t_file)
+{
+    debug("resetting file %p", (void *) t_file);
+    nautilus_file_info_invalidate_extension_info(t_file);
+}
+
+gboolean reset_all_files(NautilusDropbox* t_cvs)
+{
+    /* Only run this on the main loop or you'll cause problems.
+     * This works because you can call a function pointer with
+     * more arguments than it takes */
+    g_hash_table_foreach(t_cvs->obj2filename, (GHFunc) reset_file, nullptr);
+
+    return false;
+}
+
+
+static void when_file_dies(NautilusDropbox* t_cvs, NautilusFileInfo* t_address)
+{
+    gchar* filename;
+
+    filename = g_hash_table_lookup(t_cvs->obj2filename, t_address);
+
+    /* we never got a change to view this file */
+    if (filename != nullptr)
+    {
+        g_hash_table_remove(t_cvs->filename2obj, filename);
+        g_hash_table_remove(t_cvs->obj2filename, t_address);
+    }
+}
+
+static void changed_cb(NautilusFileInfo* t_file, NautilusDropbox* t_cvs)
+{
+    // Check if this file's path has changed, if so update the hash and invalidate the file
+    gchar* filename, pfilename;
+    gchar* filename2;
+    gchar* uri;
+
+    uri = nautilus_file_info_get_uri(t_file);
+    pfilename = g_filename_from_uri(uri, nullptr, nullptr);
+    filename = pfilename ? canonicalize_path(pfilename) : nullptr;
+
+    // Canonicalization will only null-out a non-null filename if it is invalid
+    g_assert((pfilename == nullptr && filename == nullptr) || (pfilename != nullptr && filename != nullptr));
+
+    filename2 =  g_hash_table_lookup(t_cvs->obj2filename, t_file);
+
+    g_free(pfilename);
+    g_free(uri);
+
+    // If filename2 is NULL we've never seen this file in update_file_info
+    if (filename2 == nullptr)
+    {
+        g_free(filename);
+        return;
+    }
+
+    if (filename == nullptr)
+    {
+        // A file has moved to offline storage. Lets remove it from our tables.
+        g_object_weak_unref(G_OBJECT(t_file), (GWeakNotify) when_file_dies, t_cvs);
+
+        g_hash_table_remove(t_cvs->filename2obj, filename2);
+        g_hash_table_remove(t_cvs->obj2filename, t_file);
+
+        g_signal_handlers_disconnect_by_func(t_file, G_CALLBACK(changed_cb), t_cvs);
+        reset_file(t_file);
+
+        return;
+    }
+
+    /* This is a hack, because nautilus doesn't do this for us, for some reason
+     * the file's path has changed */
+    if (strcmp(filename, filename2) != 0)
+    {
+        debug("shifty old: %s, new %s", filename2, filename);
+
+        // Gotta do this first, the call after this frees filename2
+        g_hash_table_remove(t_cvs->filename2obj, filename2);
+        g_hash_table_replace(t_cvs->obj2filename, t_file, g_strdup(filename));
+
+        NautilusFileInfo *f2;
+
+        // We shouldn't have another mapping from filename to an object
+        f2 = g_hash_table_lookup(t_cvs->filename2obj, filename);
+
+        if (f2 != nullptr)
+        {
+            // Lets fix it if it's true, just remove the mapping
+            g_hash_table_remove(t_cvs->filename2obj, filename);
+            g_hash_table_remove(t_cvs->obj2filename, f2);
+        }
+
+        g_hash_table_insert(t_cvs->filename2obj, g_strdup(filename), t_file);
+        reset_file(t_file);
+    }
+
+    g_free(filename);
 }
 
 static NautilusOperationResult
