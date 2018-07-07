@@ -98,10 +98,9 @@ static gboolean on_disconnect(DropboxCommandClient* t_dcc)
     return false;
 }
 
-static gboolean
-on_connection_attempt(ConnectionAttempt* t_ca)
+static gboolean on_connection_attempt(ConnectionAttempt* t_ca)
 {
-    GList *ll;
+    GList* ll;
 
     for (ll = t_ca->dcc->ca_hooklist; ll != nullptr; ll = g_list_next(ll))
     {
@@ -109,6 +108,7 @@ on_connection_attempt(ConnectionAttempt* t_ca)
         dccca->h(t_ca->connect_attempt, dccca->ud);
     }
 
+    *(line + term_pos) = '\0';
     g_free(t_ca);
 
     return false;
