@@ -23,37 +23,35 @@
 
 namespace dna
 {
-    namespace cr
+    bool cr_read_line(int t_pos, GIOChannel* t_chan, int t_where)
     {
-        void read_line(int t_pos, GIOChannel* t_chan, int t_where)
+        while (true)
         {
-            while (true)
+            gchar *__line;
+            gsize __line_length, __newline_pos;
+            GIOStatus __iostat;
+
+            __iostat = g_io_channel_read_line(chan, &__line, &__line_length, &__newline_pos, nullptr);
+
+            if (__iostat == G_IO_STATUS_AGAIN)
             {
-                gchar *__line;
-                gsize __line_length, __newline_pos;
-                GIOStatus __iostat;
-
-                __iostat = g_io_channel_read_line(chan, &__line, &__line_length, &__newline_pos, nullptr);
-
-                if (__iostat == G_IO_STATUS_AGAIN)
-                {
-                    CRYIELD(t_pos);
-                }
-                else if (__iostat == G_IO_STATUS_NORMAL)
-                {
-                    *(__line + __newline_pos) = '\0';
-                    t_where = __line;
-                    break;
-                }
-                else if (__iostat == G_IO_STATUS_EOF || __iostat == G_IO_STATUS_ERROR)
-                {
-                    return false;
-                }
-                else
-                {
-                    g_assert_not_reached();
-                    return false;
-                }
+                t_pos = __LINE__;
+                return true;
+            }
+            else if (__iostat == G_IO_STATUS_NORMAL)
+            {
+                *(__line + __newline_pos) = '\0';
+                t_where = __line;
+                break;
+            }
+            else if (__iostat == G_IO_STATUS_EOF || __iostat == G_IO_STATUS_ERROR)
+            {
+                return false;
+            }
+            else
+            {
+                g_assert_not_reached();
+                return false;
             }
         }
     }

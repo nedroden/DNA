@@ -25,7 +25,7 @@
 
 namespace dna
 {
-    void cr_read_line(int t_pos, GIOChannel* t_chan, int t_where);
+    bool cr_read_line(int t_pos, GIOChannel* t_chan, int t_where);
 }
 
 #endif

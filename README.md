@@ -14,3 +14,4 @@ The goals of this fork are:
 * To replace C code with C++ where possible
 * To update Python 2 code to Python 3
 * To make the extension work out of the box on most Arch Linux installations
+* To clean up the code

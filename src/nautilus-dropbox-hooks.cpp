@@ -53,7 +53,6 @@
 #include <glib.h>
 
 #include "g-util.h"
-#include "async-io-coroutine.h"
 #include "dropbox-client-util.h"
 #include "nautilus-dropbox-hooks.h"
 #include "dna-util.h"
@@ -126,7 +125,7 @@ static gboolean handle_hook_server_input(GIOChannel* t_chan, GIOCondition t_cond
                     }
                 }
 
-                t_hookserv->hhsi.numargs += 1;
+                t_hookserv->hhsi.numargs++;
             }
 
             HookData* hd;

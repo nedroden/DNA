@@ -50,83 +50,94 @@
 G_BEGIN_DECLS
 
 /* command structs */
-typedef enum {GET_FILE_INFO, GENERAL_COMMAND} NautilusDropboxRequestType;
+enum NautilusDropboxRequestType {
+    GET_FILE_INFO, GENERAL_COMMAND
+};
 
 struct DropboxCommand {
-  NautilusDropboxRequestType request_type;
+    NautilusDropboxRequestType  request_type;
 };
 
 struct DropboxFileInfoCommand {
-  DropboxCommand dc;
-  NautilusInfoProvider *provider;
-  GClosure *update_complete;
-  NautilusFileInfo *file;
-  gboolean cancelled;
+    DropboxCommand          dc;
+    NautilusInfoProvider*   provider;
+    GClosure*               update_complete;
+    NautilusFileInfo*       file;
+    gboolean                cancelled;
 };
 
 struct DropboxFileInfoCommandResponse {
-  DropboxFileInfoCommand *dfic;
-  GHashTable *file_status_response;
-  GHashTable *folder_tag_response;
-  GHashTable *emblems_response;
+    DropboxFileInfoCommand*     dfic;
+    GHashTable*                 file_status_response;
+    GHashTable*                 folder_tag_response;
+    GHashTable*                 emblems_response;
 };
 
 typedef void (*NautilusDropboxCommandResponseHandler)(GHashTable *, gpointer);
 
 struct DropboxGeneralCommand {
-  DropboxCommand dc;
-  gchar *command_name;
-  GHashTable *command_args;
-  NautilusDropboxCommandResponseHandler handler;
-  gpointer handler_ud;
+    DropboxCommand                          dc;
+    gchar*                                  command_name;
+    GHashTable*                             command_args;
+    NautilusDropboxCommandResponseHandler   handler;
+    gpointer                                handler_ud;
 };
 
 typedef void (*DropboxCommandClientConnectionAttemptHook)(guint, gpointer);
 typedef GHookFunc DropboxCommandClientConnectHook;
 
 struct DropboxCommandClient {
-  GMutex *command_connected_mutex;
-  gboolean command_connected;
-  GAsyncQueue *command_queue; 
-  GList *ca_hooklist;
-  GHookList onconnect_hooklist;
-  GHookList ondisconnect_hooklist;
+    GMutex*         command_connected_mutex;
+    gboolean        command_connected;
+    GAsyncQueue*    command_queue; 
+    GList*          ca_hooklist;
+    GHookList       onconnect_hooklist;
+    GHookList       ondisconnect_hooklist;
 };
 
-gboolean dropbox_command_client_is_connected(DropboxCommandClient *dcc);
+gboolean dropbox_command_client_is_connected(DropboxCommandClient* t_dcc);
 
-void dropbox_command_client_force_reconnect(DropboxCommandClient *dcc);
+void dropbox_command_client_force_reconnect(DropboxCommandClient* t_dcc);
+void dropbox_command_client_request(DropboxCommandClient* t_dcc, DropboxCommand* t_dc);
+void dropbox_command_client_setup(DropboxCommandClient* t_dcc);
+void dropbox_command_client_start(DropboxCommandClient* t_dcc);
 
-void
-dropbox_command_client_request(DropboxCommandClient *dcc, DropboxCommand *dc);
+void dropbox_command_client_send_simple_command(DropboxCommandClient* t_dcc, const char* t_command);
+void dropbox_command_client_send_command(DropboxCommandClient* t_dcc, NautilusDropboxCommandResponseHandler t_h, gpointer t_ud, const char* t_command, ...);
 
-void
-dropbox_command_client_setup(DropboxCommandClient *dcc);
+void dropbox_command_client_add_on_connect_hook(DropboxCommandClient* t_dcc, DropboxCommandClientConnectHook t_dhcch, gpointer t_ud);
+void dropbox_command_client_add_on_disconnect_hook(DropboxCommandClient* t_dcc, DropboxCommandClientConnectHook t_dhcch, gpointer t_ud);
+void dropbox_command_client_add_connection_attempt_hook(DropboxCommandClient* t_dcc, DropboxCommandClientConnectionAttemptHook t_dhcch, gpointer t_ud);
 
-void
-dropbox_command_client_start(DropboxCommandClient *dcc);
-
-void dropbox_command_client_send_simple_command(DropboxCommandClient *dcc,
-						const char *command);
-
-void dropbox_command_client_send_command(DropboxCommandClient *dcc, 
-					 NautilusDropboxCommandResponseHandler h,
-					 gpointer ud,
-					 const char *command, ...);
-void
-dropbox_command_client_add_on_connect_hook(DropboxCommandClient *dcc,
-					   DropboxCommandClientConnectHook dhcch,
-					   gpointer ud);
-
-void
-dropbox_command_client_add_on_disconnect_hook(DropboxCommandClient *dcc,
-					      DropboxCommandClientConnectHook dhcch,
-					      gpointer ud);
-
-void
-dropbox_command_client_add_connection_attempt_hook(DropboxCommandClient *dcc,
-						   DropboxCommandClientConnectionAttemptHook dhcch,
-						   gpointer ud);
+/**
+ * Todo: clean up this mess
+ */
+#define WRITE_OR_DIE_SANI(s,l) {                    \
+    gchar *sani_s;                          \
+    sani_s = dropbox_client_util_sanitize(s);               \
+    iostat = g_io_channel_write_chars(chan, sani_s,l, &bytes_trans, \
+                      &tmp_error);          \
+    g_free(sani_s);                         \
+    if (iostat == G_IO_STATUS_ERROR ||                  \
+    iostat == G_IO_STATUS_AGAIN) {                  \
+      if (tmp_error != NULL) {                      \
+    g_propagate_error(err, tmp_error);              \
+      }                                 \
+      return NULL;                          \
+    }                                   \
+  }
+  
+#define WRITE_OR_DIE(s,l) {                     \
+    iostat = g_io_channel_write_chars(chan, s,l, &bytes_trans,      \
+                      &tmp_error);          \
+    if (iostat == G_IO_STATUS_ERROR ||                  \
+    iostat == G_IO_STATUS_AGAIN) {                  \
+      if (tmp_error != NULL) {                      \
+    g_propagate_error(err, tmp_error);              \
+      }                                 \
+      return NULL;                          \
+    }                                   \
+  }
 
 G_END_DECLS
 

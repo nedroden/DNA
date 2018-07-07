@@ -61,130 +61,138 @@
 
 /* TODO: make this asynchronous ;) */
 
-/*
-  this is a tiny hack, necessitated by the fact that
-  finish_file info command is in nautilus_dropbox,
-  this can be cleaned up once the file_info_command isn't a special
-  case anylonger
-*/
+/**
+  * this is a tiny hack, necessitated by the fact that
+  * finish_file info command is in nautilus_dropbox,
+  * this can be cleaned up once the file_info_command isn't a special
+  * case anylonger
+  */
 gboolean nautilus_dropbox_finish_file_info_command(DropboxFileInfoCommandResponse *);
 
-typedef struct {
-  DropboxCommandClient *dcc;
-  guint connect_attempt;
-} ConnectionAttempt;
+struct ConnectionAttempt {
+    DropboxCommandClient*   dcc;
+    guint                   connect_attempt;
+};
 
-typedef struct {
-  DropboxCommandClientConnectionAttemptHook h;
-  gpointer ud;
-} DropboxCommandClientConnectionAttempt;
+struct DropboxCommandClientConnectionAttempt {
+    DropboxCommandClientConnectionAttemptHook h;
+    gpointer                                  ud;
+};
 
-typedef struct {
-  DropboxGeneralCommand *dgc;
-  GHashTable *response;
-} DropboxGeneralCommandResponse;
+struct DropboxGeneralCommandResponse {
+    DropboxGeneralCommand*    dgc;
+    GHashTable*               response;
+};
 
-static gboolean
-on_connect(DropboxCommandClient *dcc) {
-  g_hook_list_invoke(&(dcc->onconnect_hooklist), FALSE);
-  return FALSE;
+static gboolean on_connect(DropboxCommandClient* t_dcc)
+{
+    g_hook_list_invoke(&(dcc->onconnect_hooklist), false);
+
+    return false;
+}
+
+static gboolean on_disconnect(DropboxCommandClient* t_dcc)
+{
+    g_hook_list_invoke(&(dcc->ondisconnect_hooklist), false);
+
+    return false;
 }
 
 static gboolean
-on_disconnect(DropboxCommandClient *dcc) {
-  g_hook_list_invoke(&(dcc->ondisconnect_hooklist), FALSE);
-  return FALSE;
+on_connection_attempt(ConnectionAttempt* t_ca)
+{
+    GList *ll;
+
+    for (ll = t_ca->dcc->ca_hooklist; ll != nullptr; ll = g_list_next(ll))
+    {
+        DropboxCommandClientConnectionAttempt* dccca = (DropboxCommandClientConnectionAttempt *)(ll->data);
+        dccca->h(t_ca->connect_attempt, dccca->ud);
+    }
+
+    g_free(t_ca);
+
+    return false;
 }
 
-static gboolean
-on_connection_attempt(ConnectionAttempt *ca) {
-  GList *ll;
+static gboolean receive_args_until_done(GIOChannel* t_chan, GHashTable* t_return_table, GError** t_err)
+{
+    GIOStatus iostat;
+    GError* tmp_error = nullptr;
+    guint numargs = 0;
 
-  for (ll = ca->dcc->ca_hooklist; ll != NULL; ll = g_list_next(ll)) {
-    DropboxCommandClientConnectionAttempt *dccca =
-      (DropboxCommandClientConnectionAttempt *)(ll->data);
-    dccca->h(ca->connect_attempt, dccca->ud);
-  }
+    while (true)
+    {
+        gchar* line;
+        gsize term_pos;
 
-  g_free(ca);
+        /* if we are getting too many args, connection could be malicious */
+        if (numargs >= 20)
+        {
+            g_set_error(t_err, g_quark_from_static_string("malicious connection"), 0, "malicious connection");
+            return false;
+        }
 
-  return FALSE;
+        /* get the string */
+        iostat = g_io_channel_read_line(t_chan, &line, nullptr, &term_pos, &tmp_error);
+
+        if (iostat == G_IO_STATUS_ERROR || tmp_error != nullptr)
+        {
+            g_free(line);
+
+            if (tmp_error != nullptr)
+            {
+                g_propagate_error(t_err, tmp_error);
+            }
+
+            return false;
+        }
+        else if (iostat == G_IO_STATUS_EOF)
+        {
+            g_free(line);
+            g_set_error(t_err, g_quark_from_static_string("connection closed"), 0, "connection closed");
+
+            return false;
+        }
+
+        *(line+term_pos) = '\0';
+
+        if (strcmp("done", line) == 0)
+        {
+            g_free(line);
+            break;
+        }
+        else
+        {
+            gboolean parse_result;
+
+            parse_result = dropbox_client_util_command_parse_arg(line, return_table);
+            g_free(line);
+
+            if (!parse_result)
+            {
+                g_set_error(t_err, g_quark_from_static_string("parse error"), 0, "parse error");
+
+                return false;
+            }
+        }
+
+        numargs++;
+    }
+
+    return true;
 }
 
-static gboolean
-receive_args_until_done(GIOChannel *chan, GHashTable *return_table,
-			GError **err) {
-  GIOStatus iostat;
-  GError *tmp_error = NULL;
-  guint numargs = 0;
-
-  while (1) {
-    gchar *line;
-    gsize term_pos;
-
-    /* if we are getting too many args, connection could be malicious */
-    if (numargs >= 20) {
-      g_set_error(err,
-		  g_quark_from_static_string("malicious connection"),
-		  0, "malicious connection");
-      return FALSE;
-    }
-    
-    /* get the string */
-    iostat = g_io_channel_read_line(chan, &line, NULL,
-				    &term_pos, &tmp_error);
-    if (iostat == G_IO_STATUS_ERROR || tmp_error != NULL) {
-      g_free(line);
-      if (tmp_error != NULL) {
-	g_propagate_error(err, tmp_error);
-      }
-      return FALSE;
-    }
-    else if (iostat == G_IO_STATUS_EOF) {
-      g_free(line);
-      g_set_error(err,
-		  g_quark_from_static_string("connection closed"),
-		  0, "connection closed");
-      return FALSE;
-    }
-
-    *(line+term_pos) = '\0';
-
-    if (strcmp("done", line) == 0) {
-      g_free(line);
-      break;
-    }
-    else {
-      gboolean parse_result;
-
-      parse_result = dropbox_client_util_command_parse_arg(line, return_table);
-      g_free(line);
-
-      if (FALSE == parse_result) {
-	g_set_error(err,
-		    g_quark_from_static_string("parse error"),
-		    0, "parse error");
-	return FALSE;
-      }
-    }
-    
-    numargs += 1;
-  }
-
-  return TRUE;
+static void my_g_hash_table_get_keys_helper(gpointer t_key, gpointer t_value, GList** t_ud)
+{
+    *t_ud = g_list_append(*t_ud, key);
 }
 
-static void my_g_hash_table_get_keys_helper(gpointer key,
-					    gpointer value,
-					    GList **ud) {
-  *ud = g_list_append(*ud, key);
-}
+static GList *my_g_hash_table_get_keys(GHashTable* t_ght)
+{
+    GList* list = nullptr;
+    g_hash_table_foreach(t_ght, (GHFunc) my_g_hash_table_get_keys_helper, &list);
 
-static GList *my_g_hash_table_get_keys(GHashTable *ght) {
-  GList *list = NULL;
-  g_hash_table_foreach(ght, (GHFunc) 
-		       my_g_hash_table_get_keys_helper, &list);
-  return list;
+    return list;
 }
 
 /*
@@ -195,173 +203,141 @@ static GList *my_g_hash_table_get_keys(GHashTable *ght) {
   but it doesn't matter right now, any error is a sufficient
   condition to disconnect
 */
-static GHashTable *
-send_command_to_db(GIOChannel *chan, const gchar *command_name,
-		   GHashTable *args, GError **err) {
-  GError *tmp_error = NULL;
-  GIOStatus iostat;
-  gsize bytes_trans;
-  gchar *line;
+static GHashTable* send_command_to_db(GIOChannel* t_chan, const gchar* t_command_name, GHashTable* t_args, GError** t_err)
+{
+    GError* tmp_error = nullptr;
+    GIOStatus iostat;
+    gsize bytes_trans;
+    gchar* line;
 
-  g_assert(chan != NULL);
-  g_assert(command_name != NULL);
-  
+    g_assert(t_chan != nullptr);
+    g_assert(command_name != nullptr);
 
-#define WRITE_OR_DIE_SANI(s,l) {					\
-    gchar *sani_s;							\
-    sani_s = dropbox_client_util_sanitize(s);				\
-    iostat = g_io_channel_write_chars(chan, sani_s,l, &bytes_trans,	\
-				      &tmp_error);			\
-    g_free(sani_s);							\
-    if (iostat == G_IO_STATUS_ERROR ||					\
-	iostat == G_IO_STATUS_AGAIN) {					\
-      if (tmp_error != NULL) {						\
-	g_propagate_error(err, tmp_error);				\
-      }									\
-      return NULL;							\
-    }									\
-  }
-  
-#define WRITE_OR_DIE(s,l) {						\
-    iostat = g_io_channel_write_chars(chan, s,l, &bytes_trans,		\
-				      &tmp_error);			\
-    if (iostat == G_IO_STATUS_ERROR ||					\
-	iostat == G_IO_STATUS_AGAIN) {					\
-      if (tmp_error != NULL) {						\
-	g_propagate_error(err, tmp_error);				\
-      }									\
-      return NULL;							\
-    }									\
-  }
-  
-  /* send command to server */
-  WRITE_OR_DIE_SANI(command_name, -1);
-  WRITE_OR_DIE("\n", -1);
+    // Send command to server
+    WRITE_OR_DIE_SANI(command_name, -1);
+    WRITE_OR_DIE("\n", -1);
 
-  if (args != NULL) {
-    GList *keys, *li;
+    if (args != nullptr)
+    {
+        GList* keys = glib_check_version(2, 14, 0) ? my_g_hash_table_get_keys(args) : g_hash_table_get_keys(args);
 
-    /* oh god */
-    keys = glib_check_version(2, 14, 0)
-      ? my_g_hash_table_get_keys(args)
-      : g_hash_table_get_keys(args);
+        for (GList* li = keys; li != nullptr; li = g_list_next(li))
+        {
+            gchar** value;
 
-    for (li = keys; li != NULL; li = g_list_next(li)) {
-      int i;
-      gchar **value;
-      
-      WRITE_OR_DIE_SANI((gchar *) li->data, -1);
-      
-      value = g_hash_table_lookup(args, li->data);
-      for (i = 0; value[i] != NULL; i++) {
-	WRITE_OR_DIE("\t", -1);
-	WRITE_OR_DIE_SANI(value[i], -1);
-      }
-      WRITE_OR_DIE("\n", -1);
+            WRITE_OR_DIE_SANI((gchar *) li->data, -1);
+
+            value = g_hash_table_lookup(args, li->data);
+
+            for (int i = 0; value[i] != nullptr; i++)
+            {
+                WRITE_OR_DIE("\t", -1);
+                WRITE_OR_DIE_SANI(value[i], -1);
+            }
+
+            WRITE_OR_DIE("\n", -1);
+        }
+
+        g_list_free(keys);
     }
 
-    g_list_free(keys);
-  }
+    WRITE_OR_DIE("done\n", -1);
 
-  WRITE_OR_DIE("done\n", -1);
+    g_io_channel_flush(t_chan, &tmp_error);
 
-#undef WRITE_OR_DIE
-#undef WRITE_OR_DIE_SANI
-
-  g_io_channel_flush(chan, &tmp_error);
-  if (tmp_error != NULL) {
-    g_propagate_error(err, tmp_error);
-    return NULL;
-  }
-
-  /* now we have to read the data */
-  iostat = g_io_channel_read_line(chan, &line, NULL,
-				  NULL, &tmp_error);
-  if (iostat == G_IO_STATUS_ERROR) {
-    g_assert(line == NULL);
-    g_propagate_error(err, tmp_error);
-    return NULL;
-  }
-  else if (iostat == G_IO_STATUS_AGAIN) {
-    g_assert(line == NULL);
-    g_set_error(err,
-		g_quark_from_static_string("dropbox command connection timed out"),
-		0,
-		"dropbox command connection timed out");
-    return NULL;
-  }
-  else if (iostat == G_IO_STATUS_EOF) {
-    g_assert(line == NULL);
-    g_set_error(err,
-		g_quark_from_static_string("dropbox command connection closed"),
-		0,
-		"dropbox command connection closed");
-    return NULL;
-  }
-
-  /* if the response was okay */
-  if (strncmp(line, "ok\n", 3) == 0) {
-    GHashTable *return_table = 
-      g_hash_table_new_full((GHashFunc) g_str_hash,
-			    (GEqualFunc) g_str_equal,
-			    (GDestroyNotify) g_free,
-			    (GDestroyNotify) g_strfreev);
-    
-    g_free(line);
-    line = NULL;
-
-    receive_args_until_done(chan, return_table, &tmp_error);
-    if (tmp_error != NULL) {
-      g_hash_table_destroy(return_table);
-      g_propagate_error(err, tmp_error);
-      return NULL;
+    if (tmp_error != nullptr)
+    {
+        g_propagate_error(err, tmp_error);
+        return nullptr;
     }
-      
-    return return_table;
-  }
-  /* otherwise */
-  else {
-    /* read errors off until we get done */
-    do {
-      g_free(line);
-      line = NULL;
-      
-      /* clear string */
-      iostat = g_io_channel_read_line(chan, &line, NULL,
-				      NULL, &tmp_error);
-      if (iostat == G_IO_STATUS_ERROR) {
-	g_assert(line == NULL);
-	g_propagate_error(err, tmp_error);
-	return NULL;
-      }
-      else if (iostat == G_IO_STATUS_AGAIN) {
-	g_assert(line == NULL);
-	g_set_error(err,
-		    g_quark_from_static_string("dropbox command connection timed out"),
-		    0,
-		    "dropbox command connection timed out");
-	return NULL;
-	
-      }
-      else if (iostat == G_IO_STATUS_EOF) {
-	g_assert(line == NULL);
-	g_set_error(err,
-		    g_quark_from_static_string("dropbox command connection closed"),
-		    0,
-		    "dropbox command connection closed");
-	return NULL;
-      }
 
-      /* we got our line */
-    } while (strncmp(line, "done\n", 5) != 0);
+    // Now we have to read the data
+    iostat = g_io_channel_read_line(t_chan, &line, nullptr, nullptr, &tmp_error);
 
-    g_free(line);
-    return NULL;
-  }
+    switch (iostat)
+    {
+        case G_IO_STATUS_ERROR:
+            g_assert(line == nullptr);
+            g_propagate_error(err, tmp_error);
+            return nullptr;
+
+        case G_IO_STATUS_AGAIN:
+            g_assert(line == nullptr);
+            g_set_error(err, g_quark_from_static_string("dropbox command connection timed out"), 0, "dropbox command connection timed out");
+            return nullptr;
+
+        case G_IO_STATUS_EOF:
+            g_assert(line == nullptr);
+            g_set_error(err, g_quark_from_static_string("dropbox command connection closed"), 0, "dropbox command connection closed");
+            return nullptr;
+
+        default:
+            // Do nothing (just here for readability)
+    }
+
+    // If the response was okay
+    if (strncmp(line, "ok\n", 3) == 0)
+    {
+        GHashTable* return_table = g_hash_table_new_full((GHashFunc) g_str_hash, (GEqualFunc) g_str_equal, (GDestroyNotify) g_free, (GDestroyNotify) g_strfreev);
+
+        g_free(line);
+        line = nullptr;
+
+        receive_args_until_done(t_chan, return_table, &tmp_error);
+        if (tmp_error != nullptr)
+        {
+            g_hash_table_destroy(return_table);
+            g_propagate_error(err, tmp_error);
+
+            return nullptr;
+        }
+
+        return return_table;
+    }
+    else
+    {
+        // Read errors off until we get done
+        do
+        {
+            g_free(line);
+            line = nullptr;
+
+            // Clear string
+            iostat = g_io_channel_read_line(t_chan, &line, nullptr, nullptr, &tmp_error);
+
+            switch (iostat)
+            {
+                case G_IO_STATUS_ERROR:
+                    g_assert(line == nullptr);
+                    g_propagate_error(err, tmp_error);
+                    return nullptr;
+
+                case G_IO_STATUS_AGAIN:
+                    g_assert(line == nullptr);
+                    g_set_error(err, g_quark_from_static_string("dropbox command connection timed out"), 0, "dropbox command connection timed out");
+                    return nullptr;
+
+                case G_IO_STATUS_EOF:
+                    g_assert(line == nullptr);
+                    g_set_error(err,
+                    g_quark_from_static_string("dropbox command connection closed"), 0, "dropbox command connection closed");
+                    return nullptr;
+
+                default:
+                    // Do nothing (just here for readability)
+            }
+
+            // We got our line
+        } while (strncmp(line, "done\n", 5) != 0);
+
+        g_free(line);
+
+        return nullptr;
+    }
 }
 
 static void
-do_file_info_command(GIOChannel *chan, DropboxFileInfoCommand *dfic, GError **gerr) {
+do_file_info_command(GIOChannel* t_chan, DropboxFileInfoCommand* t_dfic, GError** t_gerr) {
   /* we need to send two requests to dropbox:
      file status, and folder_tags */
   GError *tmp_gerr = NULL;

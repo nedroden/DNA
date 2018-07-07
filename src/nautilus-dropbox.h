@@ -66,12 +66,12 @@ typedef struct _NautilusDropbox      NautilusDropbox;
 typedef struct _NautilusDropboxClass NautilusDropboxClass;
 
 struct _NautilusDropbox {
-  GObject parent_slot;
-  GHashTable *filename2obj;
-  GHashTable *obj2filename;
-  GMutex *emblem_paths_mutex;
-  GHashTable *emblem_paths;
-  DropboxClient dc;
+    GObject parent_slot;
+    GHashTable* filename2obj;
+    GHashTable* obj2filename;
+    GMutex* emblem_paths_mutex;
+    GHashTable* emblem_paths;
+    DropboxClient dc;
 };
 
 struct _NautilusDropboxClass {
@@ -79,7 +79,7 @@ struct _NautilusDropboxClass {
 };
 
 GType nautilus_dropbox_get_type(void);
-void  nautilus_dropbox_register_type(GTypeModule *module);
+void nautilus_dropbox_register_type(GTypeModule* module);
 
 extern gboolean dropbox_use_nautilus_submenu_workaround;
 extern gboolean dropbox_use_operation_in_progress_workaround;
