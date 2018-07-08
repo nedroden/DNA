@@ -26,6 +26,7 @@
 namespace dna
 {
     bool cr_read_line(int t_pos, GIOChannel* t_chan, int t_where);
+    template <typename Type> bool is_null(Type object);
 }
 
 #endif

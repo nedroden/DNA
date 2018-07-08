@@ -55,4 +55,9 @@ namespace dna
             }
         }
     }
+
+    template <typename T> bool is_null(T object)
+    {
+        return object == nullptr;
+    }
 }

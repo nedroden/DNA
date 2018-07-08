@@ -125,14 +125,14 @@ static gboolean receive_args_until_done(GIOChannel* t_chan, GHashTable* t_return
         gchar* line;
         gsize term_pos;
 
-        /* if we are getting too many args, connection could be malicious */
+        // If we are getting too many args, connection could be malicious
         if (numargs >= 20)
         {
             g_set_error(t_err, g_quark_from_static_string("malicious connection"), 0, "malicious connection");
             return false;
         }
 
-        /* get the string */
+        // Get the string
         iostat = g_io_channel_read_line(t_chan, &line, nullptr, &term_pos, &tmp_error);
 
         if (iostat == G_IO_STATUS_ERROR || tmp_error != nullptr)
@@ -563,7 +563,7 @@ static gpointer dropbox_command_client_thread(DropboxCommandClient* t_dcc)
         GIOChannel* chan = nullptr;
         GError* gerr = nullptr;
         int sock;
-        gboolean failflag = true;
+        bool failflag = true;
 
         do
         {

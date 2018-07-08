@@ -125,7 +125,7 @@ static gchar* canonicalize_path(gchar* t_path)
         g_free(cpy);
         g_strfreev(elts);
 
-        return toret;
+    return toret;
 }
 
 static void reset_file(NautilusFileInfo* t_file)
@@ -228,779 +228,768 @@ static void changed_cb(NautilusFileInfo* t_file, NautilusDropbox* t_cvs)
     g_free(filename);
 }
 
-static NautilusOperationResult
-nautilus_dropbox_update_file_info(NautilusInfoProvider     *provider,
-                                  NautilusFileInfo         *file,
-                                  GClosure                 *update_complete,
-                                  NautilusOperationHandle **handle) {
-  NautilusDropbox *cvs;
+static NautilusOperationResult nautilus_dropbox_update_file_info(NautilusInfoProvider* t_provider, NautilusFileInfo* t_file, GClosure* t_update_complete, NautilusOperationHandle** t_handle)
+{
+    NautilusDropbox* cvs = NAUTILUS_DROPBOX(t_provider);
 
-  cvs = NAUTILUS_DROPBOX(provider);
-
-  /* this code adds this file object to our two-way hash of file objects
-     so we can shell touch these files later */
-  {
-    gchar *pfilename, *uri;
+    // This code adds this file object to our two-way hash of file objects so we can shell touch these files later
+    
+    gchar* pfilename, uri;
 
     uri = nautilus_file_info_get_uri(file);
-    pfilename = g_filename_from_uri(uri, NULL, NULL);
+    pfilename = g_filename_from_uri(uri, nullptr, nullptr);
     g_free(uri);
-    if (pfilename == NULL) {
-      return NAUTILUS_OPERATION_COMPLETE;
+
+    if (pfilename != nullptr)
+    {
+        int cmp = 0;
+        gchar* stored_filename;
+        gchar* filename;
+
+        filename = canonicalize_path(pfilename);
+        g_free(pfilename);
+
+        if (filename == nullptr)
+        {
+            // pfilename path was invalid if canonicalize operation nulled it out
+            return NAUTILUS_OPERATION_FAILED;
+        }
+
+        stored_filename = g_hash_table_lookup(cvs->obj2filename, t_file);
+
+        // Don't worry about the dup checks, gcc is smart enough to optimize this GCSE ftw
+        if ((stored_filename != nullptr && (cmp = strcmp(stored_filename, filename)) != 0) || stored_filename == nullptr)
+        {
+            if (stored_filename != nullptr && cmp != 0)
+            {
+                // This happens when the filename changes name on a file obj but changed_cb isn't called
+                g_object_weak_unref(G_OBJECT(t_file), (GWeakNotify) when_file_dies, cvs);
+                g_hash_table_remove(cvs->obj2filename, t_file);
+                g_hash_table_remove(cvs->filename2obj, stored_filename);
+                g_signal_handlers_disconnect_by_func(t_file, G_CALLBACK(changed_cb), cvs);
+            }
+            else if (stored_filename == nullptr)
+            {
+                NautilusFileInfo* f2;
+
+                if ((f2 = g_hash_table_lookup(cvs->filename2obj, filename)) != nullptr)
+                {
+                    /* If the filename exists in the filename2obj hash
+                     * but the file obj doesn't exist in the obj2filename hash:
+                     *
+                     * this happens when nautilus allocates another file object
+                     * for a filename without first deleting the original file object
+                     *
+                     * just remove the association to the older file object, it's obsolete
+                     */
+                    g_object_weak_unref(G_OBJECT(f2), (GWeakNotify) when_file_dies, cvs);
+                    g_signal_handlers_disconnect_by_func(f2, G_CALLBACK(changed_cb), cvs);
+                    g_hash_table_remove(cvs->filename2obj, filename);
+                    g_hash_table_remove(cvs->obj2filename, f2);
+                }
+            }
+
+            // Too chatty (???)
+            g_object_weak_ref(G_OBJECT(t_file), (GWeakNotify) when_file_dies, cvs);
+            g_hash_table_insert(cvs->filename2obj, g_strdup(filename), t_file);
+            g_hash_table_insert(cvs->obj2filename, t_file, g_strdup(filename));
+            g_signal_connect(t_file, "changed", G_CALLBACK(changed_cb), cvs);
+        }
+
+        g_free(filename);
     }
-    else {
-      int cmp = 0;
-      gchar *stored_filename;
-      gchar *filename;
-      
-      filename = canonicalize_path(pfilename);
-      g_free(pfilename);
-      if (filename == NULL) {
-        /* pfilename path was invalid if canonicalize operation nulled it out */
-        return NAUTILUS_OPERATION_FAILED;
-      }
-      stored_filename = g_hash_table_lookup(cvs->obj2filename, file);
-
-      /* don't worry about the dup checks, gcc is smart enough to optimize this
-	 GCSE ftw */
-      if ((stored_filename != NULL && (cmp = strcmp(stored_filename, filename)) != 0) ||
-	  stored_filename == NULL) {
-	
-	if (stored_filename != NULL && cmp != 0) {
-	  /* this happens when the filename changes name on a file obj 
-	     but changed_cb isn't called */
-	  g_object_weak_unref(G_OBJECT(file), (GWeakNotify) when_file_dies, cvs);
-	  g_hash_table_remove(cvs->obj2filename, file);
-	  g_hash_table_remove(cvs->filename2obj, stored_filename);
-	  g_signal_handlers_disconnect_by_func(file, G_CALLBACK(changed_cb), cvs);
-	}
-	else if (stored_filename == NULL) {
-	  NautilusFileInfo *f2;
-
-	  if ((f2 = g_hash_table_lookup(cvs->filename2obj, filename)) != NULL) {
-	    /* if the filename exists in the filename2obj hash
-	       but the file obj doesn't exist in the obj2filename hash:
-	       
-	       this happens when nautilus allocates another file object
-	       for a filename without first deleting the original file object
-	       
-	       just remove the association to the older file object, it's obsolete
-	    */
-	    g_object_weak_unref(G_OBJECT(f2), (GWeakNotify) when_file_dies, cvs);
-	    g_signal_handlers_disconnect_by_func(f2, G_CALLBACK(changed_cb), cvs);
-	    g_hash_table_remove(cvs->filename2obj, filename);
-	    g_hash_table_remove(cvs->obj2filename, f2);
-	  }
-	}
-
-	/* too chatty */
-	/* debug("adding %s <-> 0x%p", filename, file);*/
-	g_object_weak_ref(G_OBJECT(file), (GWeakNotify) when_file_dies, cvs);
-	g_hash_table_insert(cvs->filename2obj, g_strdup(filename), file);
-	g_hash_table_insert(cvs->obj2filename, file, g_strdup(filename));
-	g_signal_connect(file, "changed", G_CALLBACK(changed_cb), cvs);
-      }
-
-      g_free(filename);
+    else
+    {
+        return NAUTILUS_OPERATION_COMPLETE;
     }
-  }
 
-  if (dropbox_client_is_connected(&(cvs->dc)) == FALSE ||
-      nautilus_file_info_is_gone(file)) {
-    return NAUTILUS_OPERATION_COMPLETE;
-  }
+    if (!dropbox_client_is_connected(&(cvs->dc)) || nautilus_file_info_is_gone(t_file))
+    {
+        return NAUTILUS_OPERATION_COMPLETE;
+    }
 
-  {
-    DropboxFileInfoCommand *dfic = g_new0(DropboxFileInfoCommand, 1);
+    DropboxFileInfoCommand* dfic = g_new0(DropboxFileInfoCommand, 1);
 
-    dfic->cancelled = FALSE;
-    dfic->provider = provider;
+    dfic->cancelled = false;
+    dfic->provider = t_provider;
     dfic->dc.request_type = GET_FILE_INFO;
-    dfic->update_complete = g_closure_ref(update_complete);
-    dfic->file = g_object_ref(file);
-    
+    dfic->update_complete = g_closure_ref(t_update_complete);
+    dfic->file = g_object_ref(t_file);
+
     dropbox_command_client_request(&(cvs->dc.dcc), (DropboxCommand *) dfic);
-    
-    *handle = (NautilusOperationHandle *) dfic;
-    
-    return dropbox_use_operation_in_progress_workaround
-      ? NAUTILUS_OPERATION_COMPLETE
-      : NAUTILUS_OPERATION_IN_PROGRESS;
-  }
+
+    *t_handle = (NautilusOperationHandle *) dfic;
+
+    return dropbox_use_operation_in_progress_workaround ? NAUTILUS_OPERATION_COMPLETE : NAUTILUS_OPERATION_IN_PROGRESS;
 }
 
-static void
-handle_shell_touch(GHashTable *args, NautilusDropbox *cvs) {
-  gchar **path;
+static void handle_shell_touch(GHashTable* t_args, NautilusDropbox* t_cvs)
+{
+    gchar** path;
 
-  //  debug_enter();
+    if ((path = g_hash_table_lookup(t_args, "path")) != nullptr && path[0][0] == '/')
+    {
+        NautilusFileInfo* file;
+        gchar* filename;
 
-  if ((path = g_hash_table_lookup(args, "path")) != NULL &&
-      path[0][0] == '/') {
-    NautilusFileInfo *file;
-    gchar *filename;
+        filename = canonicalize_path(path[0]);
 
-    filename = canonicalize_path(path[0]);
-    if (filename != NULL) {
-      debug("shell touch for %s", filename);
+        if (filename != nullptr)
+        {
+            debug("shell touch for %s", filename);
 
-      file = g_hash_table_lookup(cvs->filename2obj, filename);
+            file = g_hash_table_lookup(t_cvs->filename2obj, filename);
 
-      if (file != NULL) {
-        debug("gonna reset %s", filename);
-        reset_file(file);
-      }
-      g_free(filename);
+            if (file != nullptr)
+            {
+                debug("gonna reset %s", filename);
+                reset_file(file);
+            }
+
+            g_free(filename);
+        }
     }
-  }
-
-  return;
 }
 
-gboolean
-nautilus_dropbox_finish_file_info_command(DropboxFileInfoCommandResponse *dficr) {
+gboolean nautilus_dropbox_finish_file_info_command(DropboxFileInfoCommandResponse* t_dficr)
+{
+    NautilusOperationResult result = NAUTILUS_OPERATION_FAILED;
 
-  //debug_enter();
-  NautilusOperationResult result = NAUTILUS_OPERATION_FAILED;
+    if (!t_dficr->dfic->cancelled)
+    {
+        gchar **status = nullptr;
+        bool isdir = nautilus_file_info_is_directory(t_dficr->dfic->file);
 
-  if (!dficr->dfic->cancelled) {
-    gchar **status = NULL;
-    gboolean isdir;
+        // If we have emblems, just use them.
+        if (t_dficr->emblems_response != nullptr && (status = g_hash_table_lookup(t_dficr->emblems_response, "emblems")) != nullptr)
+        {
+            for (int i = 0; status[i] != nullptr; i++)
+            {
+                if (status[i][0])
+                {
+                    nautilus_file_info_add_emblem(t_dficr->dfic->file, status[i]);
+                }
+            }
 
-    isdir = nautilus_file_info_is_directory(dficr->dfic->file) ;
+            result = NAUTILUS_OPERATION_COMPLETE;
+        }
+        // If the file status command went okay
+        else if ((t_dficr->file_status_response != nullptr && (status = g_hash_table_lookup(t_dficr->file_status_response, "status")) != nullptr) && ((isdir && t_dficr->folder_tag_response != nullptr) || !isdir))
+        {
+            gchar** tag = nullptr;
 
-    /* if we have emblems just use them. */
-    if (dficr->emblems_response != NULL &&
-	(status = g_hash_table_lookup(dficr->emblems_response, "emblems")) != NULL) {
-      int i;
-      for ( i = 0; status[i] != NULL; i++) {
-	  if (status[i][0])
-	    nautilus_file_info_add_emblem(dficr->dfic->file, status[i]);
-      }
-      result = NAUTILUS_OPERATION_COMPLETE;
+            // Set the tag emblem
+            if (isdir && (tag = g_hash_table_lookup(t_dficr->folder_tag_response, "tag")) != nullptr)
+            {
+                if (strcmp("public", tag[0]) == 0)
+                {
+                    nautilus_file_info_add_emblem(t_dficr->dfic->file, "web");
+                }
+                else if (strcmp("shared", tag[0]) == 0)
+                {
+                    nautilus_file_info_add_emblem(t_dficr->dfic->file, "people");
+                }
+                else if (strcmp("photos", tag[0]) == 0)
+                {
+                    nautilus_file_info_add_emblem(t_dficr->dfic->file, "photos");
+                }
+                else if (strcmp("sandbox", tag[0]) == 0)
+                {
+                    nautilus_file_info_add_emblem(t_dficr->dfic->file, "star");
+                }
+            }
+
+            // Set the status emblem
+            int emblem_code = 0;
+
+            if (strcmp("up to date", status[0]) == 0)
+            {
+                emblem_code = 1;
+            }
+            else if (strcmp("syncing", status[0]) == 0)
+            {
+                emblem_code = 2;
+            }
+            else if (strcmp("unsyncable", status[0]) == 0)
+            {
+                emblem_code = 3;
+            }
+
+            if (emblem_code > 0)
+            {
+                nautilus_file_info_add_emblem(t_dficr->dfic->file, emblems[emblem_code-1]);
+            }
+
+            result = NAUTILUS_OPERATION_COMPLETE;
+        }
     }
-    /* if the file status command went okay */
-    else if ((dficr->file_status_response != NULL &&
-	(status =
-	 g_hash_table_lookup(dficr->file_status_response, "status")) != NULL) &&
-	((isdir == TRUE &&
-	  dficr->folder_tag_response != NULL) || isdir == FALSE)) {
-      gchar **tag = NULL;
 
-      /* set the tag emblem */
-      if (isdir &&
-	  (tag = g_hash_table_lookup(dficr->folder_tag_response, "tag")) != NULL) {
-	if (strcmp("public", tag[0]) == 0) {
-	  nautilus_file_info_add_emblem(dficr->dfic->file, "web");
-	}
-	else if (strcmp("shared", tag[0]) == 0) {
-	  nautilus_file_info_add_emblem(dficr->dfic->file, "people");
-	}
-	else if (strcmp("photos", tag[0]) == 0) {
-	  nautilus_file_info_add_emblem(dficr->dfic->file, "photos");
-	}
-	else if (strcmp("sandbox", tag[0]) == 0) {
-	  nautilus_file_info_add_emblem(dficr->dfic->file, "star");
-	}
-      }
-
-      /* set the status emblem */
-      {
-	int emblem_code = 0;
-
-	if (strcmp("up to date", status[0]) == 0) {
-	  emblem_code = 1;
-	}
-	else if (strcmp("syncing", status[0]) == 0) {
-	  emblem_code = 2;
-	}
-	else if (strcmp("unsyncable", status[0]) == 0) {
-	  emblem_code = 3;
-	}
-
-	if (emblem_code > 0) {
-	  /*
-	    debug("%s to %s", emblems[emblem_code-1],
-	    g_filename_from_uri(nautilus_file_info_get_uri(dficr->dfic->file),
-	    NULL, NULL));
-	  */
-	  nautilus_file_info_add_emblem(dficr->dfic->file, emblems[emblem_code-1]);
-	}
-      }
-      result = NAUTILUS_OPERATION_COMPLETE;
+    // Complete the info request
+    if (!dropbox_use_operation_in_progress_workaround)
+    {
+        nautilus_info_provider_update_complete_invoke(t_dficr->dfic->update_complete, t_dficr->dfic->provider, (NautilusOperationHandle*) t_dficr->dfic, result);
     }
-  }
 
-  /* complete the info request */
-  if (!dropbox_use_operation_in_progress_workaround) {
-      nautilus_info_provider_update_complete_invoke(dficr->dfic->update_complete,
-						    dficr->dfic->provider,
-						    (NautilusOperationHandle*) dficr->dfic,
-						    result);
-  }
+    // Destroy the objects we created
+    if (t_dficr->file_status_response != nullptr)
+    {
+        g_hash_table_unref(t_dficr->file_status_response);
+    }
 
-  /* destroy the objects we created */
-  if (dficr->file_status_response != NULL)
-    g_hash_table_unref(dficr->file_status_response);
-  if (dficr->folder_tag_response != NULL)
-    g_hash_table_unref(dficr->folder_tag_response);
-  if (dficr->emblems_response != NULL)
-    g_hash_table_unref(dficr->emblems_response);
+    if (t_dficr->folder_tag_response != nullptr)
+    {
+        g_hash_table_unref(t_dficr->folder_tag_response);
+    }
 
-  /* unref the objects we didn't create */
-  g_closure_unref(dficr->dfic->update_complete);
-  g_object_unref(dficr->dfic->file);
+    if (t_dficr->emblems_response != nullptr)
+    {
+        g_hash_table_unref(t_dficr->emblems_response);
+    }
 
-  /* now free the structs */
-  g_free(dficr->dfic);
-  g_free(dficr);
+    // Unref the objects we didn't create
+    g_closure_unref(t_dficr->dfic->update_complete);
+    g_object_unref(t_dficr->dfic->file);
 
-  return FALSE;
+    // Now free the structs
+    g_free(t_dficr->dfic);
+    g_free(t_dficr);
+
+    return false;
 }
 
-static void
-nautilus_dropbox_cancel_update(NautilusInfoProvider     *provider,
-                               NautilusOperationHandle  *handle) {
-  DropboxFileInfoCommand *dfic = (DropboxFileInfoCommand *) handle;
-  dfic->cancelled = TRUE;
-  return;
+static void nautilus_dropbox_cancel_update(NautilusInfoProvider* t_provider, NautilusOperationHandle* t_handle) {
+    DropboxFileInfoCommand* dfic = (DropboxFileInfoCommand *) t_handle;
+    dfic->cancelled = true;
 }
 
-static void
-menu_item_cb(NautilusMenuItem *item,
-	     NautilusDropbox *cvs) {
-  gchar *verb;
-  GList *files;
-  DropboxGeneralCommand *dcac;
+static void menu_item_cb(NautilusMenuItem* t_item, NautilusDropbox* t_cvs)
+{
+    gchar* verb;
+    GList* files;
+    DropboxGeneralCommand* dcac;
 
-  dcac = g_new(DropboxGeneralCommand, 1);
+    dcac = g_new(DropboxGeneralCommand, 1);
 
-  /* maybe these would be better passed in a container
-     struct used as the userdata pointer, oh well this
-     is how dave camp does it */
-  files = g_object_get_data(G_OBJECT(item), "nautilus_dropbox_files");
-  verb = g_object_get_data(G_OBJECT(item), "nautilus_dropbox_verb");
+    files = g_object_get_data(G_OBJECT(t_item), "nautilus_dropbox_files");
+    verb = g_object_get_data(G_OBJECT(t_item), "nautilus_dropbox_verb");
 
-  dcac->dc.request_type = GENERAL_COMMAND;
+    dcac->dc.request_type = GENERAL_COMMAND;
 
-  /* build the argument list */
-  dcac->command_args = g_hash_table_new_full((GHashFunc) g_str_hash,
-					     (GEqualFunc) g_str_equal,
-					     (GDestroyNotify) g_free,
-					     (GDestroyNotify) g_strfreev);
-  {
-    gchar **arglist;
+    // Build the argument list
+    dcac->command_args = g_hash_table_new_full((GHashFunc) g_str_hash, (GEqualFunc) g_str_equal, (GDestroyNotify) g_free, (GDestroyNotify) g_strfreev);
+
+    gchar** arglist;
     guint i;
-    GList *li;
 
-    arglist = g_new0(gchar *,g_list_length(files) + 1);
+    arglist = g_new0(gchar *, g_list_length(files) + 1);
 
-    for (li = files, i = 0; li != NULL; li = g_list_next(li)) {
-      char *uri = nautilus_file_info_get_uri(NAUTILUS_FILE_INFO(li->data));
-      char *path = g_filename_from_uri(uri, NULL, NULL);
-      g_free(uri);
-      if (!path)
-	continue;
-      arglist[i] = path;
-      i++;
+    for (GList* li = files, i = 0; li != nullptr; li = g_list_next(li))
+    {
+        char* uri = nautilus_file_info_get_uri(NAUTILUS_FILE_INFO(li->data));
+        char* path = g_filename_from_uri(uri, nullptr, nullptr);
+
+        g_free(uri);
+
+        if (!path)
+        {
+            continue;
+        }
+
+        arglist[i] = path;
+        i++;
     }
 
-    g_hash_table_insert(dcac->command_args,
-			g_strdup("paths"),
-			arglist);
-  }
+    g_hash_table_insert(dcac->command_args, g_strdup("paths"), arglist);
 
-  {
-    gchar **arglist;
+    gchar** arglist;
     arglist = g_new(gchar *, 2);
     arglist[0] = g_strdup(verb);
-    arglist[1] = NULL;
+    arglist[1] = nullptr;
     g_hash_table_insert(dcac->command_args, g_strdup("verb"), arglist);
-  }
 
-  dcac->command_name = g_strdup("icon_overlay_context_action");
-  dcac->handler = NULL;
-  dcac->handler_ud = NULL;
+    dcac->command_name = g_strdup("icon_overlay_context_action");
+    dcac->handler = nullptr;
+    dcac->handler_ud = nullptr;
 
-  dropbox_command_client_request(&(cvs->dc.dcc), (DropboxCommand *) dcac);
+    dropbox_command_client_request(&(t_cvs->dc.dcc), (DropboxCommand *) dcac);
 }
 
-static char from_hex(gchar ch) {
-    return isdigit(ch) ? ch - '0' : tolower(ch) - 'a' + 10;
+static char from_hex(gchar t_ch)
+{
+    return isdigit(ch) ? t_ch - '0' : tolower(t_ch) - 'a' + 10;
 }
 
 // decode in --> out, but dont fill more than n chars into out
 // returns len of out if thing went well, -1 if n wasn't big enough
 // can be used in place (whoa!)
-int GhettoURLDecode(gchar* out, gchar* in, int n) {
-  char *out_initial;
-
-  for(out_initial = out; out-out_initial < n && *in != '\0'; out++) {
-    if (*in == '%') {
-      if ((in[1] != '\0') && (in[2] != '\0')) {
-        *out = from_hex(in[1]) << 4 | from_hex(in[2]);
-        in += 3;
-      }
-      else {
-        // Input string isn't well-formed
-        return -1;
-      }
-    }
-    else {
-      *out = *in;
-      in++;
-    }
-  }
-
-  if (out-out_initial < n) {
-    *out = '\0';
-    return out-out_initial;
-  }
-  return -1;
-}
-
-static int
-nautilus_dropbox_parse_menu(gchar			**options,
-			    NautilusMenu		*menu,
-			    GString			*old_action_string,
-			    GList			*toret,
-			    NautilusMenuProvider	*provider,
-			    GList			*files)
+int GhettoURLDecode(gchar* t_out, gchar* t_in, int t_n)
 {
-  int ret = 0;
-  int i;
+    char* out_initial;
 
-  for ( i = 0; options[i] != NULL; i++) {
-    gchar **option_info = g_strsplit(options[i], "~", 3);
-    /* if this is a valid string */
-    if (option_info[0] == NULL || option_info[1] == NULL ||
-	option_info[2] == NULL || option_info[3] != NULL) {
-	g_strfreev(option_info);
-	continue;
+    for(out_initial = out; out - out_initial < n && *in != '\0'; out++)
+    {
+        if (*in == '%')
+        {
+            if ((in[1] != '\0') && (in[2] != '\0'))
+            {
+                *out = from_hex(in[1]) << 4 | from_hex(in[2]);
+                in += 3;
+            }
+            else
+            {
+                // Input string isn't well-formed
+                return -1;
+            }
+        }
+        else
+        {
+            *out = *in;
+            in++;
+        }
     }
 
-    gchar* item_name = option_info[0];
-    gchar* item_inner = option_info[1];
-    gchar* verb = option_info[2];
-
-    GhettoURLDecode(item_name, item_name, strlen(item_name));
-    GhettoURLDecode(verb, verb, strlen(verb));
-    GhettoURLDecode(item_inner, item_inner, strlen(item_inner));
-
-    // If the inner section has a menu in it then we create a submenu.  The verb will be ignored.
-    // Otherwise add the verb to our map and add the menu item to the list.
-    if (strchr(item_inner, '~') != NULL) {
-      GString *new_action_string = g_string_new(old_action_string->str);
-      gchar **suboptions = g_strsplit(item_inner, "|", -1);
-      NautilusMenuItem *item;
-      NautilusMenu *submenu = nautilus_menu_new();
-
-      g_string_append(new_action_string, item_name);
-      g_string_append(new_action_string, "::");
-
-      ret += nautilus_dropbox_parse_menu(suboptions, submenu, new_action_string,
-					 toret, provider, files);
-
-      item = nautilus_menu_item_new(new_action_string->str,
-				    item_name, "", NULL);
-      nautilus_menu_item_set_submenu(item, submenu);
-      nautilus_menu_append_item(menu, item);
-
-      g_strfreev(suboptions);
-      g_object_unref(item);
-      g_object_unref(submenu);
-      g_string_free(new_action_string, TRUE);
-    } else {
-      NautilusMenuItem *item;
-      GString *new_action_string = g_string_new(old_action_string->str);
-      gboolean grayed_out = FALSE;
-
-      g_string_append(new_action_string, verb);
-
-      if (item_name[0] == '!') {
-	  item_name++;
-	  grayed_out = TRUE;
-      }
-
-      item = nautilus_menu_item_new(new_action_string->str, item_name, item_inner, NULL);
-
-      nautilus_menu_append_item(menu, item);
-      /* add the file metadata to this item */
-      g_object_set_data_full (G_OBJECT(item), "nautilus_dropbox_files",
-			      nautilus_file_info_list_copy (files),
-			      (GDestroyNotify) nautilus_file_info_list_free);
-      /* add the verb metadata */
-      g_object_set_data_full (G_OBJECT(item), "nautilus_dropbox_verb",
-			      g_strdup(verb),
-			      (GDestroyNotify) g_free);
-      g_signal_connect (item, "activate", G_CALLBACK (menu_item_cb), provider);
-
-      if (grayed_out) {
-	GValue sensitive = { 0 };
-	g_value_init (&sensitive, G_TYPE_BOOLEAN);
-	g_value_set_boolean (&sensitive, FALSE);
-	g_object_set_property (G_OBJECT(item), "sensitive", &sensitive);
-      }
-
-      /* taken from nautilus-file-repairer (http://repairer.kldp.net/):
-       * this code is a workaround for a bug of nautilus
-       * See: http://bugzilla.gnome.org/show_bug.cgi?id=508878 */
-      if (dropbox_use_nautilus_submenu_workaround) {
-	toret = g_list_append(toret, item);
-      }
-
-      g_object_unref(item);
-      g_string_free(new_action_string, TRUE);
-      ret++;
-    }
-    g_strfreev(option_info);
-  }
-  return ret;
-}
-
-static void
-get_file_items_callback(GHashTable *response, gpointer ud)
-{
-  GAsyncQueue *reply_queue = ud;
-
-  /* queue_push doesn't accept NULL as a value so we create an empty hash table
-   * if we got no response. */
-  g_async_queue_push(reply_queue, response ? g_hash_table_ref(response) :
-		     g_hash_table_new((GHashFunc) g_str_hash, (GEqualFunc) g_str_equal));
-  g_async_queue_unref(reply_queue);
-}
-
-
-static GList *
-nautilus_dropbox_get_file_items(NautilusMenuProvider *provider,
-                                GtkWidget            *window,
-				GList                *files)
-{
-  /*
-   * 1. Convert files to filenames.
-   */
-  int file_count = g_list_length(files);
-
-  if (file_count < 1)
-    return NULL;
-
-  gchar **paths = g_new0(gchar *, file_count + 1);
-  int i = 0;
-  GList* elem;
-
-  for (elem = files; elem; elem = elem->next, i++) {
-    gchar *uri = nautilus_file_info_get_uri(elem->data);
-    gchar *filename_un = uri ? g_filename_from_uri(uri, NULL, NULL) : NULL;
-    gchar *filename = filename_un ? g_filename_to_utf8(filename_un, -1, NULL, NULL, NULL) : NULL;
-
-    g_free(uri);
-    g_free(filename_un);
-
-    if (filename == NULL) {
-      /* oooh, filename wasn't correctly encoded, or isn't a local file.  */
-      g_strfreev(paths);
-      return NULL;
+    if (out - out_initial < n)
+    {
+        *out = '\0';
+        return out - out_initial;
     }
 
-    paths[i] = filename;
-  }
+    return -1;
+}
 
-  GAsyncQueue *reply_queue = g_async_queue_new_full((GDestroyNotify)g_hash_table_unref);
-  
-  /*
-   * 2. Create a DropboxGeneralCommand to call "icon_overlay_context_options"
-   */
+static int nautilus_dropbox_parse_menu(gchar** t_options, NautilusMenu* t_menu, GString* t_old_action_string, GList* t_toret, NautilusMenuProvider* t_provider, GList* t_files)
+{
+    int ret = 0;
 
-  DropboxGeneralCommand *dgc = g_new0(DropboxGeneralCommand, 1);
-  dgc->dc.request_type = GENERAL_COMMAND;
-  dgc->command_name = g_strdup("icon_overlay_context_options");
-  dgc->command_args = g_hash_table_new_full((GHashFunc) g_str_hash,
-					    (GEqualFunc) g_str_equal,
-					    (GDestroyNotify) g_free,
-					    (GDestroyNotify) g_strfreev);
-  g_hash_table_insert(dgc->command_args, g_strdup("paths"), paths);
-  dgc->handler = get_file_items_callback;
-  dgc->handler_ud = g_async_queue_ref(reply_queue);
+    for (int i = 0; t_options[i] != nullptr; i++)
+    {
+        gchar** option_info = g_strsplit(t_options[i], "~", 3);
 
-  /*
-   * 3. Queue it up for the helper thread to run it.
-   */
-  NautilusDropbox *cvs = NAUTILUS_DROPBOX(provider);
-  dropbox_command_client_request(&(cvs->dc.dcc), (DropboxCommand *) dgc);
+        // If this is a valid string
+        if (option_info[0] == nullptr || option_info[1] == nullptr || option_info[2] == nullptr || option_info[3] != nullptr)
+        {
+            g_strfreev(option_info);
+            continue;
+        }
 
-  GTimeVal gtv;
+        gchar* item_name = option_info[0];
+        gchar* item_inner = option_info[1];
+        gchar* verb = option_info[2];
 
-  /*
-   * 4. We have to block until it's done because nautilus expects a reply.  But we will
-   * only block for 50 ms for a reply.
-   */
+        GhettoURLDecode(item_name, item_name, strlen(item_name));
+        GhettoURLDecode(verb, verb, strlen(verb));
+        GhettoURLDecode(item_inner, item_inner, strlen(item_inner));
 
-  g_get_current_time(&gtv);
-  g_time_val_add(&gtv, 50000);
+        /* If the inner section has a menu in it then we create a submenu.  The verb will be ignored.
+         * Otherwise add the verb to our map and add the menu item to the list. */
+        if (strchr(item_inner, '~') != nullptr)
+        {
+            GString* new_action_string = g_string_new(t_old_action_string->str);
+            gchar** suboptions = g_strsplit(item_inner, "|", -1);
+            NautilusMenuItem* item;
+            NautilusMenu* submenu = nautilus_menu_new();
 
-  GHashTable *context_options_response = g_async_queue_timed_pop(reply_queue, &gtv);
-  g_async_queue_unref(reply_queue);
+            g_string_append(new_action_string, item_name);
+            g_string_append(new_action_string, "::");
 
-  if (!context_options_response) {
-      return NULL;
-  }
+            ret += nautilus_dropbox_parse_menu(suboptions, submenu, new_action_string, t_toret, t_provider, t_files);
 
-  /*
-   * 5. Parse the reply.
-   */
+            item = nautilus_menu_item_new(new_action_string->str, item_name, "", nullptr);
+            nautilus_menu_item_set_submenu(item, submenu);
+            nautilus_menu_append_item(t_menu, item);
 
-  char **options = g_hash_table_lookup(context_options_response, "options");
-  GList *toret = NULL;
+            g_strfreev(suboptions);
+            g_object_unref(item);
+            g_object_unref(submenu);
+            g_string_free(new_action_string, true);
+        }
+        else
+        {
+            NautilusMenuItem* item;
+            GString* new_action_string = g_string_new(t_old_action_string->str);
+            bool grayed_out = false;
 
-  if (options && *options && **options)  {
-    /* build the menu */
-    NautilusMenuItem *root_item;
-    NautilusMenu *root_menu;
+            g_string_append(new_action_string, verb);
 
-    root_menu = nautilus_menu_new();
-    root_item = nautilus_menu_item_new("NautilusDropbox::root_item",
-				       "Dropbox", "Dropbox Options", "dropbox");
+            if (item_name[0] == '!')
+            {
+                item_name++;
+                grayed_out = true;
+            }
 
-    toret = g_list_append(toret, root_item);
-    GString *action_string = g_string_new("NautilusDropbox::");
+            item = nautilus_menu_item_new(new_action_string->str, item_name, item_inner, nullptr);
 
-    if (!nautilus_dropbox_parse_menu(options, root_menu, action_string,
-				     toret, provider, files)) {
-	g_object_unref(toret);
-	toret = NULL;
+            nautilus_menu_append_item(t_menu, item);
+
+            // Add the file metadata to this item
+            g_object_set_data_full(G_OBJECT(item), "nautilus_dropbox_files", nautilus_file_info_list_copy(t_files), (GDestroyNotify) nautilus_file_info_list_free);
+
+            // Add the verb metadata
+            g_object_set_data_full(G_OBJECT(item), "nautilus_dropbox_verb", g_strdup(verb), (GDestroyNotify) g_free);
+            g_signal_connect(item, "activate", G_CALLBACK (menu_item_cb), t_provider);
+
+            if (grayed_out)
+            {
+                GValue sensitive = { 0 };
+                g_value_init(&sensitive, G_TYPE_BOOLEAN);
+                g_value_set_boolean (&sensitive, false);
+                g_object_set_property(G_OBJECT(item), "sensitive", &sensitive);
+            }
+
+            /* Taken from nautilus-file-repairer (http://repairer.kldp.net/):
+             * this code is a workaround for a bug of nautilus
+             * See: http://bugzilla.gnome.org/show_bug.cgi?id=508878 */
+            if (dropbox_use_nautilus_submenu_workaround)
+            {
+                t_toret = g_list_append(t_toret, item);
+            }
+
+            g_object_unref(item);
+            g_string_free(new_action_string, true);
+            ret++;
+        }
+
+        g_strfreev(option_info);
     }
 
-    nautilus_menu_item_set_submenu(root_item, root_menu);
-
-    g_string_free(action_string, TRUE);
-    g_object_unref(root_menu);
-  }
-
-  g_hash_table_unref(context_options_response);
-
-  return toret;
+    return ret;
 }
 
-gboolean
-add_emblem_paths(GHashTable* emblem_paths_response)
+static void get_file_items_callback(GHashTable* t_response, gpointer t_ud)
 {
-  /* Only run this on the main loop or you'll cause problems. */
-  if (!emblem_paths_response)
-    return FALSE;
+    GAsyncQueue* reply_queue = t_ud;
 
-  gchar **emblem_paths_list;
-  int i;
+    /* Queue_push doesn't accept NULL as a value so we create an empty hash table
+     * if we got no response. */
+    g_async_queue_push(reply_queue, t_response ? g_hash_table_ref(t_response) : g_hash_table_new((GHashFunc) g_str_hash, (GEqualFunc) g_str_equal));
 
-  GtkIconTheme *theme = gtk_icon_theme_get_default();
-
-  if (emblem_paths_response &&
-      (emblem_paths_list = g_hash_table_lookup(emblem_paths_response, "path"))) {
-      for (i = 0; emblem_paths_list[i] != NULL; i++) {
-	if (emblem_paths_list[i][0])
-	  gtk_icon_theme_append_search_path(theme, emblem_paths_list[i]);
-      }
-  }
-  g_hash_table_unref(emblem_paths_response);
-  return FALSE;
+    g_async_queue_unref(reply_queue);
 }
 
-gboolean
-remove_emblem_paths(GHashTable* emblem_paths_response)
+
+static GList* nautilus_dropbox_get_file_items(NautilusMenuProvider* t_provider, GtkWidget* t_window, GList* t_files)
 {
-  /* Only run this on the main loop or you'll cause problems. */
-  if (!emblem_paths_response)
-    return FALSE;
+    /*
+     * 1. Convert files to filenames.
+     */
+    int file_count = g_list_length(t_files);
 
-  gchar **emblem_paths_list = g_hash_table_lookup(emblem_paths_response, "path");
-  if (!emblem_paths_list)
-      goto exit;
+    if (file_count < 1)
+    {
+        return nullptr;
+    }
 
-  // We need to remove the old paths.
-  GtkIconTheme * icon_theme = gtk_icon_theme_get_default();
-  gchar ** paths;
-  gint path_count;
+    gchar** paths = g_new0(gchar *, file_count + 1);
+    int i = 0;
+    GList* elem;
 
-  gtk_icon_theme_get_search_path(icon_theme, &paths, &path_count);
+    for (elem = t_files; elem; elem = elem->next, i++)
+    {
+        gchar* uri = nautilus_file_info_get_uri(elem->data);
+        gchar* filename_un = uri ? g_filename_from_uri(uri, nullptr, nullptr) : nullptr;
+        gchar* filename = filename_un ? g_filename_to_utf8(filename_un, -1, nullptr, nullptr, nullptr) : nullptr;
 
-  gint i, j, out = 0;
-  gboolean found = FALSE;
-  for (i = 0; i < path_count; i++) {
-      gboolean keep = TRUE;
-      for (j = 0; emblem_paths_list[j] != NULL; j++) {
-	  if (emblem_paths_list[j][0]) {
-	      if (!g_strcmp0(paths[i], emblem_paths_list[j])) {
-		  found = TRUE;
-		  keep = FALSE;
-		  g_free(paths[i]);
-		  break;
-	      }
-	  }
-      }
-      if (keep) {
-	  paths[out] = paths[i];
-	  out++;
-      }
-  }
+        g_free(uri);
+        g_free(filename_un);
 
-  /* If we found one we need to reset the path to
-     accomodate the changes */
-  if (found) {
-    paths[out] = NULL; /* Clear the last one */
-    gtk_icon_theme_set_search_path(icon_theme, (const gchar **)paths, out);
-  }
+        // Oooh, filename wasn't correctly encoded, or isn't a local file.
+        if (filename == nullptr)
+        {
+            g_strfreev(paths);
+            return nullptr;
+        }
 
-  g_strfreev(paths);
-exit:
-  g_hash_table_unref(emblem_paths_response);
-  return FALSE;
+        paths[i] = filename;
+    }
+
+    GAsyncQueue* reply_queue = g_async_queue_new_full((GDestroyNotify) g_hash_table_unref);
+
+    /*
+     * 2. Create a DropboxGeneralCommand to call "icon_overlay_context_options"
+     */
+    DropboxGeneralCommand* dgc = g_new0(DropboxGeneralCommand, 1);
+    dgc->dc.request_type = GENERAL_COMMAND;
+    dgc->command_name = g_strdup("icon_overlay_context_options");
+    dgc->command_args = g_hash_table_new_full((GHashFunc) g_str_hash, (GEqualFunc) g_str_equal, (GDestroyNotify) g_free, (GDestroyNotify) g_strfreev);
+    
+    g_hash_table_insert(dgc->command_args, g_strdup("paths"), paths);
+
+    dgc->handler = get_file_items_callback;
+    dgc->handler_ud = g_async_queue_ref(reply_queue);
+
+    /*
+     * 3. Queue it up for the helper thread to run it.
+     */
+    NautilusDropbox* cvs = NAUTILUS_DROPBOX(t_provider);
+    dropbox_command_client_request(&(cvs->dc.dcc), (DropboxCommand *) dgc);
+
+    GTimeVal gtv;
+
+    /*
+     * 4. We have to block until it's done because nautilus expects a reply.  But we will
+     * only block for 50 ms for a reply.
+     */
+
+    g_get_current_time(&gtv);
+    g_time_val_add(&gtv, 50000);
+
+    GHashTable* context_options_response = g_async_queue_timed_pop(reply_queue, &gtv);
+    g_async_queue_unref(reply_queue);
+
+    if (!context_options_response)
+    {
+        return nullptr;
+    }
+
+    /*
+     * 5. Parse the reply.
+     */
+
+    char** options = g_hash_table_lookup(context_options_response, "options");
+    GList* toret = nullptr;
+
+    if (options && *options && **options)
+    {
+        // Build the menu
+        NautilusMenuItem* root_item;
+        NautilusMenu* root_menu;
+
+        root_menu = nautilus_menu_new();
+        root_item = nautilus_menu_item_new("NautilusDropbox::root_item", "Dropbox", "Dropbox Options", "dropbox");
+
+        toret = g_list_append(toret, root_item);
+        GString* action_string = g_string_new("NautilusDropbox::");
+
+        if (!nautilus_dropbox_parse_menu(options, root_menu, action_string, toret, t_provider, files))
+        {
+            g_object_unref(toret);
+            toret = nullptr;
+        }
+
+        nautilus_menu_item_set_submenu(root_item, root_menu);
+
+        g_string_free(action_string, true);
+        g_object_unref(root_menu);
+    }
+
+    g_hash_table_unref(context_options_response);
+
+    return toret;
 }
 
-void get_emblem_paths_cb(GHashTable *emblem_paths_response, NautilusDropbox *cvs)
+gboolean add_emblem_paths(GHashTable* t_emblem_paths_response)
 {
-  if (!emblem_paths_response) {
-      emblem_paths_response = g_hash_table_new((GHashFunc) g_str_hash,
-					       (GEqualFunc) g_str_equal);
-      g_hash_table_insert(emblem_paths_response, "path", DEFAULT_EMBLEM_PATHS);
-  } else {
-      /* Increase the ref so that finish_general_command doesn't delete it. */
-      g_hash_table_ref(emblem_paths_response);
-  }
+    // Only run this on the main loop or you'll cause problems.
+    if (!t_emblem_paths_response)
+    {
+        return false;
+    }
 
-  g_mutex_lock(cvs->emblem_paths_mutex);
-  if (cvs->emblem_paths) {
-    g_idle_add((GSourceFunc) remove_emblem_paths, cvs->emblem_paths);
-    cvs->emblem_paths = NULL;
-  }
-  cvs->emblem_paths = emblem_paths_response;
-  g_mutex_unlock(cvs->emblem_paths_mutex);
+    gchar** emblem_paths_list;
 
-  g_idle_add((GSourceFunc) add_emblem_paths, g_hash_table_ref(emblem_paths_response));
-  g_idle_add((GSourceFunc) reset_all_files, cvs);
+    GtkIconTheme* theme = gtk_icon_theme_get_default();
+
+    if (t_emblem_paths_response && (emblem_paths_list = g_hash_table_lookup(t_emblem_paths_response, "path")))
+    {
+        for (int i = 0; emblem_paths_list[i] != nullptr; i++)
+        {
+            if (emblem_paths_list[i][0])
+            {
+                gtk_icon_theme_append_search_path(theme, emblem_paths_list[i]);
+            }
+        }
+    }
+    g_hash_table_unref(t_emblem_paths_response);
+
+    return false;
 }
 
-static void
-on_connect(NautilusDropbox *cvs) {
-  reset_all_files(cvs);
+gboolean remove_emblem_paths(GHashTable* t_emblem_paths_response)
+{
+    // Only run this on the main loop or you'll cause problems.
+    if (!t_emblem_paths_response)
+    {
+        return false;
+    }
 
-  dropbox_command_client_send_command(&(cvs->dc.dcc),
-				      (NautilusDropboxCommandResponseHandler) get_emblem_paths_cb,
-				      cvs, "get_emblem_paths", NULL);
+    gchar** emblem_paths_list = g_hash_table_lookup(t_emblem_paths_response, "path");
+    
+    if (!emblem_paths_list)
+    {
+        goto exit;
+    }
+
+    // We need to remove the old paths.
+    GtkIconTheme* icon_theme = gtk_icon_theme_get_default();
+    gchar** paths;
+    gint path_count;
+
+    gtk_icon_theme_get_search_path(icon_theme, &paths, &path_count);
+
+    gint i, j, out = 0;
+    bool found = false;
+
+    for (i = 0; i < path_count; i++)
+    {
+        bool keep = true;
+
+        for (j = 0; emblem_paths_list[j] != NULL; j++)
+        {
+            if (emblem_paths_list[j][0])
+            {
+                if (!g_strcmp0(paths[i], emblem_paths_list[j]))
+                {
+                    found = true;
+                    keep = false;
+                    g_free(paths[i]);
+
+                    break;
+                }
+            }
+        }
+
+        if (keep)
+        {
+            paths[out] = paths[i];
+            out++;
+        }
+    }
+
+    // If we found one we need to reset the path to accomodate the changes
+    if (found)
+    {
+        paths[out] = nullptr; /* Clear the last one */
+        gtk_icon_theme_set_search_path(icon_theme, (const gchar **) paths, out);
+    }
+
+    g_strfreev(paths);
+
+    exit:
+        g_hash_table_unref(t_emblem_paths_response);
+        return false;
 }
 
-static void
-on_disconnect(NautilusDropbox *cvs) {
-  reset_all_files(cvs);
+void get_emblem_paths_cb(GHashTable *t_emblem_paths_response, NautilusDropbox *t_cvs)
+{
+    if (!t_emblem_paths_response)
+    {
+        t_emblem_paths_response = g_hash_table_new((GHashFunc) g_str_hash, (GEqualFunc) g_str_equal);
+        g_hash_table_insert(t_emblem_paths_response, "path", DEFAULT_EMBLEM_PATHS);
+    }
+    else
+    {
+        // Increase the ref so that finish_general_command doesn't delete it.
+        g_hash_table_ref(t_emblem_paths_response);
+    }
 
-  g_mutex_lock(cvs->emblem_paths_mutex);
-  /* This call will free the data too. */
-  g_idle_add((GSourceFunc) remove_emblem_paths, cvs->emblem_paths);
-  cvs->emblem_paths = NULL;
-  g_mutex_unlock(cvs->emblem_paths_mutex);
+    g_mutex_lock(t_cvs->emblem_paths_mutex);
+
+    if (t_cvs->emblem_paths)
+    {
+        g_idle_add((GSourceFunc) remove_emblem_paths, t_cvs->emblem_paths);
+        t_cvs->emblem_paths = nullptr;
+    }
+
+    t_cvs->emblem_paths = t_emblem_paths_response;
+    g_mutex_unlock(t_cvs->emblem_paths_mutex);
+
+    g_idle_add((GSourceFunc) add_emblem_paths, g_hash_table_ref(t_emblem_paths_response));
+    g_idle_add((GSourceFunc) reset_all_files, t_cvs);
+}
+
+static void on_connect(NautilusDropbox* t_cvs)
+{
+    reset_all_files(t_cvs);
+    dropbox_command_client_send_command(&(t_cvs->dc.dcc), (NautilusDropboxCommandResponseHandler) get_emblem_paths_cb, t_cvs, "get_emblem_paths", nullptr);
+}
+
+static void on_disconnect(NautilusDropbox* t_cvs)
+{
+    reset_all_files(t_cvs);
+
+    g_mutex_lock(t_cvs->emblem_paths_mutex);
+
+    // This call will free the data too.
+    g_idle_add((GSourceFunc) remove_emblem_paths, t_cvs->emblem_paths);
+    t_cvs->emblem_paths = nullptr;
+    g_mutex_unlock(t_cvs->emblem_paths_mutex);
 }
 
 
-static void
-nautilus_dropbox_menu_provider_iface_init (NautilusMenuProviderIface *iface) {
-  iface->get_file_items = nautilus_dropbox_get_file_items;
-  return;
+static void nautilus_dropbox_menu_provider_iface_init (NautilusMenuProviderIface* t_iface)
+{
+    t_iface->get_file_items = nautilus_dropbox_get_file_items;
 }
 
-static void
-nautilus_dropbox_info_provider_iface_init (NautilusInfoProviderIface *iface) {
-  iface->update_file_info = nautilus_dropbox_update_file_info;
-  iface->cancel_update = nautilus_dropbox_cancel_update;
-  return;
+static void nautilus_dropbox_info_provider_iface_init (NautilusInfoProviderIface* t_iface) {
+    t_iface->update_file_info = nautilus_dropbox_update_file_info;
+    t_iface->cancel_update = nautilus_dropbox_cancel_update;
 }
 
-static void
-nautilus_dropbox_instance_init (NautilusDropbox *cvs) {
-  cvs->filename2obj = g_hash_table_new_full((GHashFunc) g_str_hash,
-					    (GEqualFunc) g_str_equal,
-					    (GDestroyNotify) g_free,
-					    (GDestroyNotify) NULL);
-  cvs->obj2filename = g_hash_table_new_full((GHashFunc) g_direct_hash,
-					    (GEqualFunc) g_direct_equal,
-					    (GDestroyNotify) NULL,
-					    (GDestroyNotify) g_free);
-  cvs->emblem_paths_mutex = g_mutex_new();
-  cvs->emblem_paths = NULL;
+static void nautilus_dropbox_instance_init (NautilusDropbox* t_cvs)
+{
+    t_cvs->filename2obj = g_hash_table_new_full((GHashFunc) g_str_hash, (GEqualFunc) g_str_equal, (GDestroyNotify) g_free, (GDestroyNotify) nullptr);
+    t_cvs->obj2filename = g_hash_table_new_full((GHashFunc) g_direct_hash, (GEqualFunc) g_direct_equal, (GDestroyNotify) nullptr, (GDestroyNotify) g_free);
+    t_cvs->emblem_paths_mutex = g_mutex_new();
+    t_cvs->emblem_paths = nullptr;
 
-  /* setup the connection obj*/
-  dropbox_client_setup(&(cvs->dc));
+    // Setup the connection object
+    dropbox_client_setup(&(t_cvs->dc));
 
-  /* our hooks */
-  nautilus_dropbox_hooks_add(&(cvs->dc.hookserv), "shell_touch",
-			     (DropboxUpdateHook) handle_shell_touch, cvs);
+    // Our hooks
+    nautilus_dropbox_hooks_add(&(t_cvs->dc.hookserv), "shell_touch", (DropboxUpdateHook) handle_shell_touch, t_cvs);
 
-  /* add connection handlers */
-  dropbox_client_add_on_connect_hook(&(cvs->dc),
-				     (DropboxClientConnectHook) on_connect,
-				     cvs);
-  dropbox_client_add_on_disconnect_hook(&(cvs->dc),
-					(DropboxClientConnectHook) on_disconnect,
-					cvs);
-  
-  /* now start the connection */
-  debug("about to start client connection");
-  dropbox_client_start(&(cvs->dc));
+    // Add connection handlers
+    dropbox_client_add_on_connect_hook(&(t_cvs->dc), (DropboxClientConnectHook) on_connect, t_cvs);
+    dropbox_client_add_on_disconnect_hook(&(t_cvs->dc), (DropboxClientConnectHook) on_disconnect, t_cvs);
 
-  return;
+    // Now start the connection
+    debug("about to start client connection");
+    dropbox_client_start(&(t_cvs->dc));
 }
 
-static void
-nautilus_dropbox_class_init (NautilusDropboxClass *class) {
+static void nautilus_dropbox_class_init (NautilusDropboxClass* t_class)
+{
+
 }
 
-static void
-nautilus_dropbox_class_finalize (NautilusDropboxClass *class) {
-  debug("just checking");
-  /* kill threads here? */
+static void nautilus_dropbox_class_finalize (NautilusDropboxClass* t_class)
+{
+
 }
 
-GType
-nautilus_dropbox_get_type (void) {
-  return dropbox_type;
+GType nautilus_dropbox_get_type()
+{
+    return dropbox_type;
 }
 
-void
-nautilus_dropbox_register_type (GTypeModule *module) {
-  static const GTypeInfo info = {
-    sizeof (NautilusDropboxClass),
-    (GBaseInitFunc) NULL,
-    (GBaseFinalizeFunc) NULL,
-    (GClassInitFunc) nautilus_dropbox_class_init,
-    (GClassFinalizeFunc) nautilus_dropbox_class_finalize,
-    NULL,
-    sizeof (NautilusDropbox),
-    0,
-    (GInstanceInitFunc) nautilus_dropbox_instance_init,
-  };
+void nautilus_dropbox_register_type (GTypeModule* t_module) {
+    static const GTypeInfo info = {
+        sizeof (NautilusDropboxClass),
+        (GBaseInitFunc) nullptr,
+        (GBaseFinalizeFunc) nullptr,
+        (GClassInitFunc) nautilus_dropbox_class_init,
+        (GClassFinalizeFunc) nautilus_dropbox_class_finalize,
+        nullptr,
+        sizeof (NautilusDropbox),
+        0,
+        (GInstanceInitFunc) nautilus_dropbox_instance_init,
+    };
 
-  static const GInterfaceInfo menu_provider_iface_info = {
-    (GInterfaceInitFunc) nautilus_dropbox_menu_provider_iface_init,
-    NULL,
-    NULL
-  };
+    static const GInterfaceInfo menu_provider_iface_info = {
+        (GInterfaceInitFunc) nautilus_dropbox_menu_provider_iface_init,
+        nullptr,
+        nullptr
+    };
 
-  static const GInterfaceInfo info_provider_iface_info = {
-    (GInterfaceInitFunc) nautilus_dropbox_info_provider_iface_init,
-    NULL,
-    NULL
-  };
+    static const GInterfaceInfo info_provider_iface_info = {
+        (GInterfaceInitFunc) nautilus_dropbox_info_provider_iface_init,
+        nullptr,
+        nullptr
+    };
 
-  dropbox_type =
-    g_type_module_register_type(module,
-				G_TYPE_OBJECT,
-				"NautilusDropbox",
-				&info, 0);
-  
-  g_type_module_add_interface (module,
-			       dropbox_type,
-			       NAUTILUS_TYPE_MENU_PROVIDER,
-			       &menu_provider_iface_info);
+    dropbox_type = g_type_module_register_type(module, G_TYPE_OBJECT, "NautilusDropbox", &info, 0);
 
-  g_type_module_add_interface (module,
-			       dropbox_type,
-			       NAUTILUS_TYPE_INFO_PROVIDER,
-			       &info_provider_iface_info);
+    g_type_module_add_interface(module, dropbox_type, NAUTILUS_TYPE_MENU_PROVIDER, &menu_provider_iface_info);
+    g_type_module_add_interface(module, dropbox_type, NAUTILUS_TYPE_INFO_PROVIDER, &info_provider_iface_info);
 }

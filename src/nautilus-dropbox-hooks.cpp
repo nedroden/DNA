@@ -69,8 +69,8 @@ static gboolean handle_hook_server_input(GIOChannel* t_chan, GIOCondition t_cond
 {
     // debug_enter();
 
-    /* we have some sweet macros defined that allow us to write this
-     async event handler like a microthread yeahh, watch out for context */
+    /* We have some sweet macros defined that allow us to write this
+     * async event handler like a microthread yeahh, watch out for context */
     if (t_hookserv->hhsi.line == 0)
     {
         while (true)
